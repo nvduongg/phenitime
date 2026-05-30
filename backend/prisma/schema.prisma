@@ -1,0 +1,258 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Đơn vị tổ chức
+model OrganizationUnit {
+  unit_id    String    @id @db.VarChar(50)
+  unit_name  String    @db.VarChar(255)
+  unit_type  String    @db.VarChar(50)
+  parent_id  String?   @db.VarChar(50)
+  created_at DateTime? @default(now())
+
+  parent     OrganizationUnit?  @relation("UnitHierarchy", fields: [parent_id], references: [unit_id])
+  children   OrganizationUnit[] @relation("UnitHierarchy")
+  
+  courses    Course[]     
+  curricula  Curriculum[]
+
+  lecturers  Lecturer[]
+
+  majors     Major[]
+
+  @@map("organization_units")
+}
+
+// 2. Khóa học
+model Cohort {
+  cohort_id     String    @id @db.VarChar(50)
+  start_year    Int
+  training_type String?   @db.VarChar(100)
+  created_at    DateTime? @default(now())
+
+  curricula     Curriculum[] 
+
+  @@map("cohorts")
+}
+
+// 3. Học kỳ
+model Semester {
+  semester_id   String    @id @db.VarChar(50)
+  semester_name String    @db.VarChar(255)
+  academic_year String    @db.VarChar(20)
+  start_date    DateTime  @db.Date
+  end_date      DateTime  @db.Date
+  is_active     Boolean   @default(false)
+  created_at    DateTime? @default(now())
+
+  sections   CourseSection[]
+
+  @@map("semesters")
+}
+
+// ==========================================
+// NHÓM 2: CHƯƠNG TRÌNH & LỘ TRÌNH ĐÀO TẠO
+// ==========================================
+
+// 1. Học phần (Course)
+model Course {
+  course_id        String   @id @db.VarChar(50)
+  course_name      String   @db.VarChar(255)
+  credits          Float    // Tổng số tín chỉ (hỗ trợ 0.5, 2.5, ...)
+  theory_credits   Float    // Tín chỉ lý thuyết
+  practice_credits Float    // Tín chỉ thực hành
+  tc_lt            Int      @default(0) // Tín chỉ LT (Quyết định 1062)
+  tc_th            Int      @default(0) // Tín chỉ TH (Quyết định 1062)
+  class_type       String   @default("LT") @db.VarChar(30)  // Hình thức học
+  room_type        String   @default("LT") @db.VarChar(50)  // Loại phòng / địa điểm học (LT, PM, TN, SB, XT, BV, DN, ONLINE)
+  default_room_type String  @default("LT") @db.VarChar(50) // Loại phòng mặc định khi sinh lớp tự động
+  template_code    String  @default("STANDARD") @db.VarChar(50) // Mẫu sinh lớp: STANDARD, LAB_COUPLED, ONLINE, MEDICAL_CLINIC
+  unit_id          String   @db.VarChar(50) // Khoa quản lý học phần này
+  created_at       DateTime? @default(now())
+
+  unit             OrganizationUnit @relation(fields: [unit_id], references: [unit_id])
+  roadmaps         Roadmap[]
+
+  // Quan hệ cho Môn tiên quyết / Song hành
+  conditions       CourseCondition[] @relation("CourseHasCondition")
+  isConditionFor   CourseCondition[] @relation("IsConditionForCourse")
+
+  sections   CourseSection[]
+
+  lecturerSpecialties LecturerCourseSpecialty[]
+
+  @@map("courses")
+}
+
+// Bảng trung gian: Điều kiện học phần (Tiên quyết, Song hành, Học trước) [cite: 103, 104, 105]
+model CourseCondition {
+  id                  Int    @id @default(autoincrement())
+  course_id           String @db.VarChar(50) // Môn học cần đăng ký
+  condition_course_id String @db.VarChar(50) // Môn điều kiện
+  condition_type      String @db.VarChar(50) // PREREQUISITE (Tiên quyết), COREQUISITE (Song hành)
+
+  course              Course @relation("CourseHasCondition", fields: [course_id], references: [course_id])
+  conditionCourse     Course @relation("IsConditionForCourse", fields: [condition_course_id], references: [course_id])
+
+  @@unique([course_id, condition_course_id]) // Một cặp môn chỉ có 1 loại điều kiện
+  @@map("course_conditions")
+}
+
+// 2. Ngành đào tạo (Major)
+model Major {
+  major_id      String    @id @db.VarChar(50)   // Mã nội bộ duy nhất (VD: 7480201-DH)
+  major_code    String    @db.VarChar(20)       // Mã ngành quốc gia — có thể trùng giữa các CTĐT
+  major_name    String    @db.VarChar(255)
+  unit_id       String    @db.VarChar(50)
+  created_at    DateTime? @default(now())
+
+  unit       OrganizationUnit @relation(fields: [unit_id], references: [unit_id])
+  curricula  Curriculum[]
+
+  @@index([major_code])
+  @@map("majors")
+}
+
+// 3. Chương trình đào tạo (Curriculum)
+model Curriculum {
+  curriculum_id   String   @id @db.VarChar(50)
+  curriculum_name String   @db.VarChar(255) // Tự sinh: {major_name} - Khóa {cohort_id}
+  major_id        String   @db.VarChar(50)
+  total_credits   Float    @default(0) // Tự tính từ tổng tín chỉ các học phần trong lộ trình
+  cohort_id       String   @db.VarChar(50)
+  unit_id         String   @db.VarChar(50)
+
+  major           Major            @relation(fields: [major_id], references: [major_id])
+  cohort          Cohort           @relation(fields: [cohort_id], references: [cohort_id])
+  unit            OrganizationUnit @relation(fields: [unit_id], references: [unit_id])
+  roadmaps        Roadmap[]
+  studentGroups   StudentGroup[]
+
+  @@map("curricula")
+}
+
+// 3. Lộ trình chuẩn (Roadmap)
+model Roadmap {
+  id                   Int    @id @default(autoincrement())
+  curriculum_id        String @db.VarChar(50)
+  course_id            String @db.VarChar(50)
+  recommended_semester Int    // VD: Khuyên học ở kỳ 1, 2, 3... của khóa học
+  course_type          String @db.VarChar(50) // MANDATORY (Bắt buộc) hoặc ELECTIVE (Tự chọn) [cite: 100, 101]
+
+  curriculum           Curriculum @relation(fields: [curriculum_id], references: [curriculum_id], onDelete: Cascade)
+  course               Course     @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+
+  @@unique([curriculum_id, course_id]) // Một môn học chỉ xuất hiện 1 lần trong 1 CTĐT
+  @@map("roadmaps")
+}
+
+// 4. Lớp sinh viên hành chính (Student Group) [cite: 194]
+model StudentGroup {
+  group_id      String @id @db.VarChar(50)
+  group_name    String @db.VarChar(255) // VD: K17_QTNL_01
+  curriculum_id String @db.VarChar(50)  // Lớp này học theo CTĐT nào
+  student_count Int?                    // Sĩ số lớp
+
+  curriculum    Curriculum @relation(fields: [curriculum_id], references: [curriculum_id])
+
+  sections   CourseSection[]
+
+  @@map("student_groups")
+}
+
+// ==========================================
+// NHÓM 3: TÀI NGUYÊN & VẬN HÀNH (RESOURCES & OPERATIONS)
+// ==========================================
+
+// 1. Giảng viên (Lecturer)
+model Lecturer {
+  lecturer_id   String @id @db.VarChar(50) // VD: PU1459
+  lecturer_name String @db.VarChar(255)    // VD: Đinh Thị Hà
+  unit_id       String @db.VarChar(50)     // Trực thuộc Khoa/Bộ môn nào
+  max_quota     Int    @default(15)        // Số tiết/tín chỉ tối đa mỗi học kỳ
+  current_load  Int    @default(0)         // Tải giảng dạy hiện tại
+
+  unit          OrganizationUnit @relation(fields: [unit_id], references: [unit_id])
+  sections      CourseSection[]  // Các lớp giảng viên này dạy
+  specialties   LecturerCourseSpecialty[]
+
+  @@map("lecturers")
+}
+
+// Ma trận chuyên môn: giảng viên có thể dạy những học phần nào
+model LecturerCourseSpecialty {
+  lecturer_id String @db.VarChar(50)
+  course_id   String @db.VarChar(50)
+
+  lecturer Lecturer @relation(fields: [lecturer_id], references: [lecturer_id], onDelete: Cascade)
+  course   Course   @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+
+  @@id([lecturer_id, course_id])
+  @@map("lecturer_course_specialties")
+}
+
+// 2. Phòng học (Room)
+model Room {
+  room_id   String @id @db.VarChar(50) // VD: A2-102
+  capacity  Int                        // Sức chứa (VD: 80)
+  room_type String @db.VarChar(50)     // Loại phòng / địa điểm học (LT, PM, TN, SB, XT, BV, DN, ONLINE)
+
+  timetables Timetable[]               // Lịch sử dụng phòng
+
+  @@map("rooms")
+}
+
+// 3. Lớp học phần (Course Section - Dữ liệu từ file Đầu vào)
+model CourseSection {
+  section_id  String  @id @db.VarChar(100) // VD: An toàn và sức khỏe nghề nghiệp-1-3-25(N01)
+  course_id   String  @db.VarChar(50)      // Mã môn học
+  semester_id String  @db.VarChar(50)      // Học kỳ
+  lecturer_id String? @db.VarChar(50)      // Mã giảng viên
+  class_type  String  @db.VarChar(30)      // Hình thức học
+  capacity    Int                          // Số lượng SV dự kiến
+  room_type_req String @default("LT") @db.VarChar(50) // Loại phòng yêu cầu (LT, PM, SB, ...)
+  st_per_week Int?                         // Số tiết/tuần (ST/tuần) theo QĐ 1062
+  duration_weeks Int?                      // Số tuần hoàn thành môn
+
+  course      Course    @relation(fields: [course_id], references: [course_id])
+  semester    Semester  @relation(fields: [semester_id], references: [semester_id])
+  lecturer    Lecturer? @relation(fields: [lecturer_id], references: [lecturer_id])
+  
+  // Prisma tự động tạo bảng trung gian (Pivot table) cho quan hệ N-N này
+  student_groups StudentGroup[] 
+  
+  timetables  Timetable[]
+
+  @@map("course_sections")
+}
+
+// 4. Thời khóa biểu (Timetable - Dữ liệu từ file Đầu ra)
+model Timetable {
+  schedule_id  Int      @id @default(autoincrement())
+  section_id   String   @db.VarChar(100)
+  room_id      String?  @db.VarChar(50)  // Cho phép NULL vì môn Thể dục (Aerobic) đôi khi không cần mã phòng
+  day_of_week  Int      // Thứ trong tuần (2, 3, 4, 5, 6, 7, 8)
+  start_period Int      // Tiết bắt đầu (1 -> 12 hoặc 15)
+  period_count Int      // Số tiết kéo dài (VD: 3)
+  start_date   DateTime @db.Date         // Ngày bắt đầu học
+  end_date     DateTime @db.Date         // Ngày kết thúc học
+
+  section      CourseSection @relation(fields: [section_id], references: [section_id], onDelete: Cascade)
+  room         Room?         @relation(fields: [room_id], references: [room_id])
+
+  @@map("timetables")
+}
+
+// 5. Cấu hình hệ thống (key-value JSON — scheduling, v.v.)
+model SystemConfig {
+  key        String   @id @db.VarChar(100)
+  value      Json
+  updated_at DateTime @updatedAt @default(now())
+
+  @@map("system_configs")
+}

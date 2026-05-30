@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "courses" ADD COLUMN "class_type" VARCHAR(10) NOT NULL DEFAULT 'LT';
+ALTER TABLE "courses" ADD COLUMN "room_type" VARCHAR(50) NOT NULL DEFAULT 'LT';

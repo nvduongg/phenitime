@@ -1,0 +1,45 @@
+services:
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: phenitime_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: phenitime_user
+      POSTGRES_PASSWORD: phenitime_pass
+      POSTGRES_DB: phenitime_db
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - "5432:5432"
+    volumes:
+      - phenitime_pg_data:/var/lib/postgresql/data
+    networks:
+      - phenitime_network
+
+  redis-db:
+    image: redis:7-alpine
+    container_name: phenitime_redis
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - "6379:6379"
+    volumes:
+      - phenitime_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - phenitime_network
+
+volumes:
+  phenitime_pg_data:
+    name: phenitime_pg_data
+  phenitime_redis_data:
+    name: phenitime_redis_data
+
+networks:
+  phenitime_network:
+    name: phenitime_network
+    driver: bridge
