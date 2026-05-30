@@ -1,0 +1,14 @@
+# Repo-root Docker build context (frontend image)
+.git
+data/
+reports/
+paper_vnict/
+IEEECS_CPS_2026/
+
+frontend/node_modules
+frontend/dist
+frontend/coverage
+frontend/public/templates/
+
+backend/node_modules
+core/venv

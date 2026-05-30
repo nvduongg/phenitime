@@ -15,6 +15,12 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "service": "phenitime-core"}
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

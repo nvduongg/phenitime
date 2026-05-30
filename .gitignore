@@ -1,13 +1,89 @@
+# --- Dependencies ---
 node_modules/
+**/node_modules/
+
+# Python
 venv/
-__pycache__/
+.venv/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# --- Environment & secrets ---
 .env
-.DS_Store
+.env.*
+!.env.example
+!.env.*.example
+
+# --- IDE & OS ---
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
 .DS_Store
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+Thumbs.db
+
+# --- Logs & runtime ---
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Frontend (Vite / React) ---
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/public/templates/
+
+# --- Backend (Node / Prisma) ---
+backend/dist/
+backend/coverage/
+backend/uploads/
+backend/tmp/
+
+# --- Python core engine ---
+core/venv/
+core/.pytest_cache/
+core/.mypy_cache/
+core/.ruff_cache/
+core/htmlcov/
+core/.coverage
+
+# --- Docker (local volumes are named in compose.yaml) ---
+*.pid
+
+# --- LaTeX build artifacts ---
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.nav
+*.out
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+*.xdv
+
+# --- Project-specific local data & papers (not part of app source) ---
+data/
+reports/
+paper_vnict/
+IEEECS_CPS_2026/
+
+# --- Cursor / editor artifacts ---
+.cursor/
+*.code-workspace

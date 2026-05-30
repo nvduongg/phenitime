@@ -3,17 +3,25 @@ services:
     image: postgres:15-alpine
     container_name: phenitime_postgres
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: phenitime_user
-      POSTGRES_PASSWORD: phenitime_pass
-      POSTGRES_DB: phenitime_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       TZ: Asia/Ho_Chi_Minh
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - phenitime_pg_data:/var/lib/postgresql/data
     networks:
       - phenitime_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   redis-db:
     image: redis:7-alpine
@@ -22,14 +30,84 @@ services:
     environment:
       TZ: Asia/Ho_Chi_Minh
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - phenitime_redis_data:/data
+    networks:
+      - phenitime_network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: phenitime_core
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB}?schema=public
+      TZ: Asia/Ho_Chi_Minh
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - phenitime_network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 20s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: phenitime_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB}?schema=public
+      REDIS_HOST: redis-db
+      REDIS_PORT: 6379
+      AI_CORE_URL: http://core:8000
+      PORT: 5000
+      TZ: Asia/Ho_Chi_Minh
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-db:
+        condition: service_healthy
+      core:
+        condition: service_healthy
+    networks:
+      - phenitime_network
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    container_name: phenitime_frontend
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
       - phenitime_network
 
