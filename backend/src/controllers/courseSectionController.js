@@ -5,6 +5,15 @@ const prisma = new PrismaClient();
 const { getAiCoreApiUrl } = require('../config/aiCore');
 
 const { autoGenerateCourseSections } = require('../services/course-sections.service');
+const { SCHOOL_SCOPED_ROLES } = require('../constants/roles');
+const {
+    SECTION_LIST_INCLUDE,
+    isSectionInOperationalScope,
+    requiresExternalAssignmentRequest,
+    enrichSectionAssignmentMeta,
+    validateLecturerAssignable,
+    loadPendingRequestsBySectionId,
+} = require('../utils/assignmentScope');
 
 function getSectionWeight(section) {
     const raw = section.class_type === 'TH'
@@ -86,19 +95,28 @@ function handlePrismaError(error, res) {
 exports.getAllCourseSections = async (req, res) => {
     try {
         const sections = await prisma.courseSection.findMany({
-            include: {
-                course: { include: { unit: true } },
-                lecturer: true,
-                student_groups: true,
-                semester: {
-                    select: { start_date: true, end_date: true },
-                },
-                timetables: {
-                    select: { start_date: true, end_date: true },
-                },
-            },
+            include: SECTION_LIST_INCLUDE,
         });
-        res.status(200).json({ status: 'success', data: sections });
+
+        let data = sections;
+        if (req.scopeUnitIds) {
+            const filtered = sections.filter((section) =>
+                isSectionInOperationalScope(section, req.scopeUnitIds),
+            );
+            const pendingMap = await loadPendingRequestsBySectionId(
+                prisma,
+                filtered.map((s) => s.section_id),
+            );
+            data = filtered.map((section) =>
+                enrichSectionAssignmentMeta(
+                    section,
+                    req.scopeUnitIds,
+                    pendingMap.get(section.section_id),
+                ),
+            );
+        }
+
+        res.status(200).json({ status: 'success', data });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
     }
@@ -106,6 +124,13 @@ exports.getAllCourseSections = async (req, res) => {
 
 exports.createCourseSection = async (req, res) => {
     try {
+        if (req.user && SCHOOL_SCOPED_ROLES.has(req.user.role)) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'VP trường/khoa không được tạo lớp học phần',
+            });
+        }
+
         const { section_id, course_id, semester_id, lecturer_id, class_type, capacity, student_group_ids } = req.body;
         await assertSemesterExists(semester_id);
 
@@ -124,6 +149,47 @@ exports.createCourseSection = async (req, res) => {
 
 exports.updateCourseSection = async (req, res) => {
     try {
+        if (req.user && SCHOOL_SCOPED_ROLES.has(req.user.role)) {
+            const hasExtraFields = Object.keys(req.body || {}).some(
+                (key) => key !== 'lecturer_id',
+            );
+            if (hasExtraFields) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'VP trường/khoa chỉ được phân công giảng viên, không sửa thông tin lớp học phần',
+                });
+            }
+
+            const section = await prisma.courseSection.findUnique({
+                where: { section_id: req.params.id },
+                include: SECTION_LIST_INCLUDE,
+            });
+
+            if (!section) {
+                return res.status(404).json({ status: 'fail', message: 'Không tìm thấy lớp học phần' });
+            }
+
+            const check = await validateLecturerAssignable(
+                prisma,
+                req.scopeUnitIds,
+                section,
+                req.body?.lecturer_id ?? null,
+            );
+            if (!check.ok) {
+                return res.status(403).json({ status: 'error', message: check.message });
+            }
+
+            const updatedSection = await prisma.courseSection.update({
+                where: { section_id: req.params.id },
+                data: { lecturer_id: req.body?.lecturer_id ?? null },
+                include: SECTION_LIST_INCLUDE,
+            });
+            const data = req.scopeUnitIds
+                ? enrichSectionAssignmentMeta(updatedSection, req.scopeUnitIds)
+                : updatedSection;
+            return res.status(200).json({ status: 'success', data });
+        }
+
         const {
             section_id,
             student_group_ids,
@@ -156,6 +222,13 @@ exports.updateCourseSection = async (req, res) => {
 
 exports.deleteCourseSection = async (req, res) => {
     try {
+        if (req.user && SCHOOL_SCOPED_ROLES.has(req.user.role)) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'VP trường/khoa không được xóa lớp học phần',
+            });
+        }
+
         await prisma.courseSection.delete({ where: { section_id: req.params.id } });
         res.status(200).json({ status: 'success', message: 'Xóa thành công' });
     } catch (error) {
@@ -165,6 +238,13 @@ exports.deleteCourseSection = async (req, res) => {
 
 exports.autoGenerateSections = async (req, res) => {
     try {
+        if (req.user && SCHOOL_SCOPED_ROLES.has(req.user.role)) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'VP trường/khoa không được sinh lớp học phần',
+            });
+        }
+
         const { semester_id } = req.body;
 
         if (!semester_id) {
@@ -200,13 +280,23 @@ exports.autoAssignLecturers = async (req, res) => {
             });
         }
 
-        const unassignedSections = await prisma.courseSection.findMany({
+        const sectionInclude = { course: { include: { unit: true } }, student_groups: { include: { curriculum: { include: { major: true } } } } };
+
+        let unassignedSections = await prisma.courseSection.findMany({
             where: {
                 semester_id,
                 lecturer_id: null,
             },
-            include: { course: true },
+            include: sectionInclude,
         });
+
+        if (req.scopeUnitIds) {
+            unassignedSections = unassignedSections.filter(
+                (section) =>
+                    isSectionInOperationalScope(section, req.scopeUnitIds) &&
+                    !requiresExternalAssignmentRequest(section, req.scopeUnitIds),
+            );
+        }
 
         if (unassignedSections.length === 0) {
             return res.status(200).json({
@@ -224,7 +314,12 @@ exports.autoAssignLecturers = async (req, res) => {
             include: { course: true },
         });
 
+        const lecturerUnitFilter = req.scopeUnitIds
+            ? { unit_id: { in: req.scopeUnitIds } }
+            : {};
+
         const lecturers = await prisma.lecturer.findMany({
+            where: lecturerUnitFilter,
             include: { specialties: true },
         });
         if (lecturers.length === 0) {
@@ -275,8 +370,35 @@ exports.autoAssignLecturers = async (req, res) => {
             });
         }
 
+        const sectionById = new Map(unassignedSections.map((s) => [s.section_id, s]));
+        const validAssignments = [];
+
+        for (const assignment of assignments) {
+            const section = sectionById.get(assignment.section_id);
+            if (!section) {
+                continue;
+            }
+            const check = await validateLecturerAssignable(
+                prisma,
+                req.scopeUnitIds,
+                section,
+                assignment.lecturer_id,
+            );
+            if (check.ok) {
+                validAssignments.push(assignment);
+            }
+        }
+
+        if (validAssignments.length === 0) {
+            return res.status(400).json({
+                status: 'fail',
+                message:
+                    'Không có phân công hợp lệ trong phạm vi của bạn (kiểm tra môn liên khoa — cần GV thuộc khoa quản lý học phần).',
+            });
+        }
+
         await prisma.$transaction(
-            assignments.map((assignment) =>
+            validAssignments.map((assignment) =>
                 prisma.courseSection.update({
                     where: { section_id: assignment.section_id },
                     data: { lecturer_id: assignment.lecturer_id },
@@ -304,9 +426,11 @@ exports.autoAssignLecturers = async (req, res) => {
 
         res.status(200).json({
             status: 'success',
-            message: aiResult.message || `Phân công AI thành công ${assignments.length} lớp học phần`,
-            data: assignments,
-            total_assigned: assignments.length,
+            message:
+                aiResult.message ||
+                `Phân công AI thành công ${validAssignments.length} lớp học phần`,
+            data: validAssignments,
+            total_assigned: validAssignments.length,
         });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });

@@ -1,0 +1,56 @@
+# Dev overlay: hot reload — không cần rebuild sau mỗi lần sửa code.
+# Chạy: docker compose -f compose.yaml -f compose.dev.yaml up -d
+# Hoặc: ./scripts/docker-dev.sh
+
+services:
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./core/api:/app/api
+      - ./core/algorithms:/app/algorithms
+      - ./core/data:/app/data
+    command:
+      - uvicorn
+      - api.server:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    environment:
+      NODE_ENV: development
+    command: ["npm", "run", "dev"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.js:/app/vite.config.js
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "${FRONTEND_DEV_PORT:-5173}:5173"
+    environment:
+      VITE_API_URL: /api/v1
+      VITE_DEV_PROXY: http://backend:5000
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  frontend_node_modules:

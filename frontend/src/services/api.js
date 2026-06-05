@@ -14,9 +14,25 @@ const api = axios.create({
   },
 })
 
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('phenitime_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/login')) {
+      localStorage.removeItem('phenitime_token')
+      localStorage.removeItem('phenitime_user')
+      delete api.defaults.headers.common.Authorization
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login'
+      }
+    }
     if (!error.config?.skipErrorToast) {
       message.error(getErrorMessage(error))
     }
@@ -130,8 +146,8 @@ export const deleteRoom = async (id) => {
   return response.data
 }
 
-export const getLecturers = async () => {
-  const response = await api.get('/lecturers')
+export const getLecturers = async (params) => {
+  const response = await api.get('/lecturers', { params })
   return response.data
 }
 
@@ -323,6 +339,44 @@ export const updateCourseSection = async (id, payload) => {
 
 export const autoAssignLecturers = async (semesterId) => {
   const response = await api.post('/course-sections/auto-assign', { semester_id: semesterId })
+  return response.data
+}
+
+export const listAssignmentRequests = async (params) => {
+  const response = await api.get('/assignment-requests', { params })
+  return response.data
+}
+
+export const createAssignmentRequest = async (payload) => {
+  const response = await api.post('/assignment-requests', payload)
+  return response.data
+}
+
+export const bulkCreateAssignmentRequests = async (payload) => {
+  const response = await api.post('/assignment-requests/bulk', payload)
+  return response.data
+}
+
+export const fulfillAssignmentRequest = async (requestId, payload) => {
+  const response = await api.post(
+    `/assignment-requests/${encodePathSegment(requestId)}/fulfill`,
+    payload,
+  )
+  return response.data
+}
+
+export const cancelAssignmentRequest = async (requestId) => {
+  const response = await api.post(
+    `/assignment-requests/${encodePathSegment(requestId)}/cancel`,
+  )
+  return response.data
+}
+
+export const rejectAssignmentRequest = async (requestId, payload) => {
+  const response = await api.post(
+    `/assignment-requests/${encodePathSegment(requestId)}/reject`,
+    payload,
+  )
   return response.data
 }
 

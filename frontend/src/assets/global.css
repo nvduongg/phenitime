@@ -4,7 +4,7 @@
   --app-sider-width: 260px;
   --app-sider-collapsed-width: 80px;
   --app-sider-current-width: 260px;
-  --app-user-width: 168px;
+  --app-user-width: 200px;
   --app-trigger-size: 28px;
   --app-trigger-gap: -1px;
   --brand-blue: #1677ff;
@@ -366,15 +366,116 @@ body {
 }
 
 .app-header-user {
-  cursor: pointer;
+  display: inline-flex;
   align-items: center;
-  white-space: nowrap;
+  gap: 8px;
+  max-width: 100%;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.app-header-user:hover,
+.app-header-user:focus-visible {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  outline: none;
+}
+
+.app-header-user-avatar {
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-violet) 100%) !important;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.app-header-user-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  max-width: 132px;
+  line-height: 1.25;
+  text-align: left;
 }
 
 .app-header-user-name {
-  max-width: 112px;
+  display: block;
+  width: 100%;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-header-user-sub {
+  display: block;
+  width: 100%;
+  font-size: 11px;
+  font-weight: 400;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-header-user-chevron {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.app-user-dropdown {
+  min-width: 240px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+}
+
+.app-user-dropdown-head {
+  display: flex;
+  gap: 12px;
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.app-user-dropdown-avatar {
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-violet) 100%) !important;
+}
+
+.app-user-dropdown-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.app-user-dropdown-name {
+  font-size: 14px;
+  max-width: 168px;
+}
+
+.app-user-dropdown-email,
+.app-user-dropdown-role {
+  font-size: 12px;
+  max-width: 168px;
+}
+
+.app-user-dropdown .ant-dropdown-menu {
+  box-shadow: none;
+  padding: 4px;
 }
 
 .page-lead {
@@ -1580,5 +1681,42 @@ body {
 
   .timetable-grid-toolbar__meta {
     justify-content: flex-start;
+  }
+}
+
+.auth-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f0f5ff 0%, #f8fafc 50%, #e6fffb 100%);
+  padding: 24px;
+}
+
+.auth-login-card {
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+}
+
+.auth-bootstrap-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .app-header-user-text,
+  .app-header-user-chevron {
+    display: none;
+  }
+
+  .app-header-user {
+    padding: 4px;
+  }
+
+  :root {
+    --app-user-width: 52px;
   }
 }

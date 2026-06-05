@@ -1,6 +1,8 @@
 import { Navigate } from 'react-router-dom'
+import ProtectedRoute from '../components/Auth/ProtectedRoute.jsx'
 import AppLayout from '../components/Layout/AppLayout.jsx'
-import Dashboard from '../pages/Dashboard/index.jsx'
+import Login from '../pages/Auth/Login.jsx'
+import DashboardHome from '../pages/Dashboard/DashboardHome.jsx'
 import Departments from '../pages/MasterData/Departments.jsx'
 import Cohorts from '../pages/MasterData/Cohorts.jsx'
 import Semesters from '../pages/MasterData/Semesters.jsx'
@@ -11,16 +13,27 @@ import Curriculums from '../pages/Academic/Curriculums.jsx'
 import Majors from '../pages/Academic/Majors.jsx'
 import StudentGroups from '../pages/Academic/StudentGroups.jsx'
 import LecturerAssignment from '../pages/Academic/LecturerAssignment.jsx'
+import AssignmentRequests from '../pages/Academic/AssignmentRequests.jsx'
 import CourseSections from '../pages/CourseSections/index.jsx'
 import AiScheduler from '../pages/AiScheduler/index.jsx'
 import Timetables from '../pages/Timetables/index.jsx'
+import Users from '../pages/Admin/Users.jsx'
+import { ROLES } from '../constants/roles'
 
 export const appRoutes = [
   {
+    path: '/login',
+    element: <Login />,
+  },
+  {
     path: '/',
-    element: <AppLayout />,
+    element: (
+      <ProtectedRoute>
+        <AppLayout />
+      </ProtectedRoute>
+    ),
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, element: <DashboardHome /> },
       { path: 'master-data/units', element: <Departments /> },
       { path: 'master-data/cohorts', element: <Cohorts /> },
       { path: 'master-data/semesters', element: <Semesters /> },
@@ -31,9 +44,18 @@ export const appRoutes = [
       { path: 'academic/curriculums', element: <Curriculums /> },
       { path: 'academic/student-groups', element: <StudentGroups /> },
       { path: 'academic/lecturer-assignment', element: <LecturerAssignment /> },
+      { path: 'academic/assignment-requests', element: <AssignmentRequests /> },
       { path: 'course-sections', element: <CourseSections /> },
       { path: 'ai-scheduler', element: <AiScheduler /> },
       { path: 'timetables', element: <Timetables /> },
+      {
+        path: 'admin/users',
+        element: (
+          <ProtectedRoute roles={[ROLES.UNIVERSITY_TRAINING]}>
+            <Users />
+          </ProtectedRoute>
+        ),
+      },
       { path: 'admin/settings', element: <Navigate to="/ai-scheduler" replace /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],

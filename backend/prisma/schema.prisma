@@ -25,6 +25,11 @@ model OrganizationUnit {
 
   majors     Major[]
 
+  users      User[]
+
+  assignment_requests_as_requester LecturerAssignmentRequest[] @relation("AssignmentRequestRequesterUnit")
+  assignment_requests_as_target    LecturerAssignmentRequest[] @relation("AssignmentRequestTargetUnit")
+
   @@map("organization_units")
 }
 
@@ -228,6 +233,8 @@ model CourseSection {
   
   timetables  Timetable[]
 
+  assignment_requests LecturerAssignmentRequest[]
+
   @@map("course_sections")
 }
 
@@ -255,4 +262,54 @@ model SystemConfig {
   updated_at DateTime @updatedAt @default(now())
 
   @@map("system_configs")
+}
+
+// 6. Người dùng & phân quyền
+model User {
+  user_id       String   @id @default(uuid()) @db.VarChar(36)
+  email         String   @unique @db.VarChar(255)
+  password_hash String   @db.VarChar(255)
+  full_name     String   @db.VarChar(255)
+  role          String   @db.VarChar(50)
+  scope_unit_id String?  @db.VarChar(50)
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  scope_unit OrganizationUnit? @relation(fields: [scope_unit_id], references: [unit_id], onDelete: SetNull)
+
+  assignment_requests_created  LecturerAssignmentRequest[] @relation("AssignmentRequestRequester")
+  assignment_requests_fulfilled LecturerAssignmentRequest[] @relation("AssignmentRequestFulfiller")
+
+  @@index([role])
+  @@index([scope_unit_id])
+  @@map("users")
+}
+
+// Yêu cầu phân công GV khi HP do đơn vị khác quản lý chuyên môn
+model LecturerAssignmentRequest {
+  request_id              String   @id @default(uuid()) @db.VarChar(36)
+  section_id              String   @db.VarChar(100)
+  semester_id             String   @db.VarChar(50)
+  status                  String   @default("PENDING") @db.VarChar(20)
+  requested_by_user_id    String   @db.VarChar(36)
+  requester_scope_unit_id String   @db.VarChar(50)
+  target_scope_unit_id    String   @db.VarChar(50)
+  message                 String?  @db.Text
+  response_note           String?  @db.Text
+  fulfilled_by_user_id    String?  @db.VarChar(36)
+  fulfilled_at            DateTime?
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+
+  section         CourseSection    @relation(fields: [section_id], references: [section_id], onDelete: Cascade)
+  requester       User             @relation("AssignmentRequestRequester", fields: [requested_by_user_id], references: [user_id])
+  fulfiller       User?            @relation("AssignmentRequestFulfiller", fields: [fulfilled_by_user_id], references: [user_id])
+  requester_unit  OrganizationUnit @relation("AssignmentRequestRequesterUnit", fields: [requester_scope_unit_id], references: [unit_id])
+  target_unit     OrganizationUnit @relation("AssignmentRequestTargetUnit", fields: [target_scope_unit_id], references: [unit_id])
+
+  @@index([section_id, status])
+  @@index([target_scope_unit_id, status])
+  @@index([requester_scope_unit_id, status])
+  @@map("lecturer_assignment_requests")
 }

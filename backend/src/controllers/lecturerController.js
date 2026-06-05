@@ -1,4 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
+const { assertUnitInScope, scopeForbiddenResponse } = require('../utils/assertScope');
 const prisma = new PrismaClient();
 
 const lecturerInclude = {
@@ -28,7 +29,12 @@ async function syncSpecialties(lecturerId, courseIds = []) {
 
 exports.getAllLecturers = async (req, res) => {
     try {
+        const scopeFilter = req.scopeUnitIds
+            ? { unit_id: { in: req.scopeUnitIds } }
+            : {};
+
         const lecturers = await prisma.lecturer.findMany({
+            where: scopeFilter,
             include: lecturerInclude,
             orderBy: { lecturer_name: 'asc' },
         });
@@ -47,6 +53,10 @@ exports.createLecturer = async (req, res) => {
             max_quota,
             course_ids,
         } = req.body;
+
+        if (!assertUnitInScope(req, unit_id)) {
+            return scopeForbiddenResponse(res);
+        }
 
         const newLecturer = await prisma.lecturer.create({
             data: {
@@ -83,6 +93,10 @@ exports.updateLecturer = async (req, res) => {
             course_ids,
         } = req.body;
 
+        if (unit_id && !assertUnitInScope(req, unit_id)) {
+            return scopeForbiddenResponse(res);
+        }
+
         await prisma.lecturer.update({
             where: { lecturer_id: id },
             data: {
@@ -112,7 +126,8 @@ exports.updateLecturer = async (req, res) => {
 
 exports.deleteLecturer = async (req, res) => {
     try {
-        await prisma.lecturer.delete({ where: { lecturer_id: req.params.id } });
+        const { id } = req.params;
+        await prisma.lecturer.delete({ where: { lecturer_id: id } });
         res.status(200).json({ status: 'success', message: 'Xóa thành công' });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });

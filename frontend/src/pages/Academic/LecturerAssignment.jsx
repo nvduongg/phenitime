@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RobotOutlined } from '@ant-design/icons'
-import { Button, Empty, Select, Spin, Table, message } from 'antd'
+import { Link } from 'react-router-dom'
+import { RobotOutlined, SendOutlined } from '@ant-design/icons'
+import { Alert, Button, Empty, Input, Modal, Select, Spin, Table, Tag, Typography, message } from 'antd'
+
+const { Text } = Typography
 import {
   Bar,
   BarChart,
@@ -15,10 +18,19 @@ import {
   YAxis,
 } from 'recharts'
 import PageHeader from '../../components/Common/PageHeader'
+import { useAuth } from '../../contexts/AuthContext'
 import { useAppContext } from '../../contexts/AppContext'
+import { isOfficeRole } from '../../config/permissions'
+import {
+  canSendAssignmentRequest,
+  hasPendingAssignmentRequest,
+  requiresAssignmentRequest,
+} from '../../utils/assignmentScope'
 import { getTableScroll } from '../../config/table'
 import {
   autoAssignLecturers,
+  bulkCreateAssignmentRequests,
+  createAssignmentRequest,
   getCourseSections,
   getLecturers,
   updateCourseSection,
@@ -38,13 +50,21 @@ function getSectionTeachingWeight(section) {
 }
 
 function LecturerAssignment() {
+  const { user } = useAuth()
   const { semesters, activeSemesterId } = useAppContext()
+  const scopedOffice = isOfficeRole(user?.role)
   const [lecturers, setLecturers] = useState([])
   const [sections, setSections] = useState([])
   const [selectedSemester, setSelectedSemester] = useState(undefined)
   const [loading, setLoading] = useState(false)
   const [autoAssigning, setAutoAssigning] = useState(false)
   const [updatingSectionId, setUpdatingSectionId] = useState(null)
+  const [requestModal, setRequestModal] = useState(null)
+  const [requestMessage, setRequestMessage] = useState('')
+  const [requestSubmitting, setRequestSubmitting] = useState(false)
+  const [bulkRequestOpen, setBulkRequestOpen] = useState(false)
+  const [bulkRequestMessage, setBulkRequestMessage] = useState('')
+  const [bulkRequestSubmitting, setBulkRequestSubmitting] = useState(false)
 
   const effectiveSemester =
     selectedSemester !== undefined ? selectedSemester : activeSemesterId
@@ -58,6 +78,16 @@ function LecturerAssignment() {
     [lecturers],
   )
 
+  const externalSectionCount = useMemo(
+    () => sections.filter((s) => requiresAssignmentRequest(s)).length,
+    [sections],
+  )
+
+  const bulkRequestEligibleCount = useMemo(
+    () => sections.filter((s) => canSendAssignmentRequest(s)).length,
+    [sections],
+  )
+
   const semesterOptions = useMemo(
     () =>
       semesters.map((semester) => ({
@@ -69,12 +99,8 @@ function LecturerAssignment() {
 
   useEffect(() => {
     getLecturers()
-      .then((lecturersRes) => {
-        setLecturers(lecturersRes.data || [])
-      })
-      .catch(() => {
-        // Error handled by axios interceptor
-      })
+      .then((res) => setLecturers(res.data || []))
+      .catch(() => {})
   }, [])
 
   const fetchSections = useCallback(async (semesterId) => {
@@ -195,6 +221,45 @@ function LecturerAssignment() {
     }
   }
 
+  const handleCreateRequest = async () => {
+    if (!requestModal) return
+    setRequestSubmitting(true)
+    try {
+      await createAssignmentRequest({
+        section_id: requestModal.section_id,
+        message: requestMessage.trim() || undefined,
+      })
+      message.success('Đã gửi yêu cầu phân công')
+      setRequestModal(null)
+      setRequestMessage('')
+      await fetchSections(effectiveSemester)
+    } finally {
+      setRequestSubmitting(false)
+    }
+  }
+
+  const handleBulkCreateRequests = async () => {
+    if (!effectiveSemester) {
+      message.warning('Chọn học kỳ trước')
+      return
+    }
+    setBulkRequestSubmitting(true)
+    try {
+      const res = await bulkCreateAssignmentRequests({
+        semester_id: effectiveSemester,
+        message: bulkRequestMessage.trim() || undefined,
+      })
+      message.success(res.message || 'Đã gửi yêu cầu hàng loạt')
+      setBulkRequestOpen(false)
+      setBulkRequestMessage('')
+      await fetchSections(effectiveSemester)
+    } catch {
+      // interceptor
+    } finally {
+      setBulkRequestSubmitting(false)
+    }
+  }
+
   const handleAutoAssign = async () => {
     if (!effectiveSemester) {
       message.warning('Vui lòng chọn học kỳ trước khi phân công tự động')
@@ -228,8 +293,36 @@ function LecturerAssignment() {
       title: 'Tên học phần',
       key: 'course_name',
       ellipsis: true,
-      render: (_, record) => record.course?.course_name || record.course_id,
+      render: (_, record) => (
+        <span>
+          {record.course?.course_name || record.course_id}
+          {requiresAssignmentRequest(record) ? (
+            <Tag color="orange" style={{ marginLeft: 8 }}>
+              Cần yêu cầu
+            </Tag>
+          ) : null}
+          {hasPendingAssignmentRequest(record) ? (
+            <Tag color="blue" style={{ marginLeft: 8 }}>
+              Đã gửi YC
+            </Tag>
+          ) : null}
+        </span>
+      ),
     },
+    ...(scopedOffice
+      ? [
+          {
+            title: 'Khoa quản lý HP',
+            key: 'managing_unit',
+            width: 160,
+            ellipsis: true,
+            render: (_, record) =>
+              record.assignment_meta?.course_managing_unit_name ||
+              record.course?.unit?.unit_name ||
+              '—',
+          },
+        ]
+      : []),
     {
       title: 'Hình thức học',
       key: 'learning_mode',
@@ -246,28 +339,76 @@ function LecturerAssignment() {
       title: 'Giảng viên phụ trách',
       key: 'lecturer_assignment',
       width: 320,
-      render: (_, record) => (
-        <Select
-          showSearch
-          allowClear
-          optionFilterProp="label"
-          placeholder="Chọn giảng viên"
-          style={{ width: '100%' }}
-          options={lecturerOptions}
-          value={record.lecturer_id || undefined}
-          loading={updatingSectionId === record.section_id}
-          disabled={updatingSectionId === record.section_id || autoAssigning}
-          onChange={(value) => handleLecturerChange(record.section_id, value)}
-        />
-      ),
+      render: (_, record) => {
+        if (requiresAssignmentRequest(record)) {
+          const targetName =
+            record.assignment_meta?.course_managing_unit_name ||
+            record.course?.unit?.unit_name
+          if (hasPendingAssignmentRequest(record)) {
+            return (
+              <span>
+                <Text type="secondary">Chờ {targetName} phân công</Text>
+                <Link to="/academic/assignment-requests" style={{ marginLeft: 8 }}>
+                  Xem yêu cầu
+                </Link>
+              </span>
+            )
+          }
+          return (
+            <Button
+              size="small"
+              icon={<SendOutlined />}
+              onClick={() => {
+                setRequestModal(record)
+                setRequestMessage('')
+              }}
+            >
+              Gửi yêu cầu → {targetName}
+            </Button>
+          )
+        }
+
+        return (
+          <Select
+            showSearch
+            allowClear
+            optionFilterProp="label"
+            placeholder="Chọn giảng viên"
+            style={{ width: '100%' }}
+            options={lecturerOptions}
+            value={record.lecturer_id || undefined}
+            loading={updatingSectionId === record.section_id}
+            disabled={updatingSectionId === record.section_id || autoAssigning}
+            onChange={(value) => handleLecturerChange(record.section_id, value)}
+          />
+        )
+      },
     },
   ]
 
   return (
     <>
+      {scopedOffice ? (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="Học phần do đơn vị khác quản lý chuyên môn"
+          description={
+            externalSectionCount > 0
+              ? `Có ${externalSectionCount} lớp không thuộc khoa/trường bạn quản lý chuyên môn — không tự phân công được. Dùng «Gửi yêu cầu» để nhờ VP trường/khoa quản lý học phần phân công giảng viên của họ. Theo dõi tại mục Yêu cầu phân công.`
+              : 'Chỉ phân công giảng viên thuộc phạm vi đơn vị bạn. Lớp học phần do đơn vị khác quản lý sẽ hiển thị nút gửi yêu cầu.'
+          }
+        />
+      ) : null}
+
       <PageHeader
           title="Phân công giảng viên"
-          subtitle="Gán giảng viên cho từng lớp học phần theo học kỳ"
+          subtitle={
+            scopedOffice
+              ? 'Tự phân công trong phạm vi; học phần ngoài phạm vi — gửi yêu cầu'
+              : 'Gán giảng viên cho từng lớp học phần theo học kỳ'
+          }
           filters={
             <>
               <Select
@@ -285,11 +426,25 @@ function LecturerAssignment() {
                 size="middle"
                 icon={<RobotOutlined />}
                 loading={autoAssigning}
-                disabled={!effectiveSemester}
+                disabled={!effectiveSemester || autoAssigning}
                 onClick={handleAutoAssign}
               >
                 Phân công tự động bằng AI
               </Button>
+              {scopedOffice ? (
+                <Button
+                  size="middle"
+                  icon={<SendOutlined />}
+                  disabled={!effectiveSemester || bulkRequestEligibleCount === 0}
+                  onClick={() => {
+                    setBulkRequestMessage('')
+                    setBulkRequestOpen(true)
+                  }}
+                >
+                  Gửi yêu cầu hàng loạt
+                  {bulkRequestEligibleCount > 0 ? ` (${bulkRequestEligibleCount})` : ''}
+                </Button>
+              ) : null}
             </>
           }
         />
@@ -402,6 +557,57 @@ function LecturerAssignment() {
             }}
           />
         </Spin>
+
+      <Modal
+        title="Gửi yêu cầu phân công hàng loạt"
+        open={bulkRequestOpen}
+        onCancel={() => setBulkRequestOpen(false)}
+        onOk={handleBulkCreateRequests}
+        okText={`Gửi ${bulkRequestEligibleCount} yêu cầu`}
+        confirmLoading={bulkRequestSubmitting}
+        destroyOnHidden
+        okButtonProps={{ disabled: bulkRequestEligibleCount === 0 }}
+      >
+        <p>
+          Gửi yêu cầu phân công cho <strong>{bulkRequestEligibleCount}</strong> lớp học phần do đơn
+          vị khác quản lý chuyên môn (chưa có yêu cầu đang chờ) trong học kỳ đã chọn.
+        </p>
+        <Input.TextArea
+          rows={3}
+          placeholder="Ghi chú chung (tùy chọn) — áp dụng cho tất cả yêu cầu"
+          value={bulkRequestMessage}
+          onChange={(e) => setBulkRequestMessage(e.target.value)}
+        />
+      </Modal>
+
+      <Modal
+        title="Gửi yêu cầu phân công giảng dạy"
+        open={Boolean(requestModal)}
+        onCancel={() => setRequestModal(null)}
+        onOk={handleCreateRequest}
+        okText="Gửi yêu cầu"
+        confirmLoading={requestSubmitting}
+        destroyOnHidden
+      >
+        {requestModal ? (
+          <>
+            <p>
+              Lớp <strong>{requestModal.section_id}</strong> — học phần do{' '}
+              <strong>
+                {requestModal.assignment_meta?.course_managing_unit_name ||
+                  requestModal.course?.unit?.unit_name}
+              </strong>{' '}
+              quản lý chuyên môn. Đơn vị đó sẽ phân công giảng viên thay bạn.
+            </p>
+            <Input.TextArea
+              rows={3}
+              placeholder="Ghi chú (tùy chọn): lý do, thời hạn, lớp ghép..."
+              value={requestMessage}
+              onChange={(e) => setRequestMessage(e.target.value)}
+            />
+          </>
+        ) : null}
+      </Modal>
     </>
   )
 }

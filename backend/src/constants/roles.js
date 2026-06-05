@@ -1,0 +1,37 @@
+const ROLES = {
+    UNIVERSITY_TRAINING: 'UNIVERSITY_TRAINING',
+    SCHOOL_OFFICE: 'SCHOOL_OFFICE',
+    FACULTY_OFFICE: 'FACULTY_OFFICE',
+};
+
+const SCHOOL_SCOPED_ROLES = new Set([ROLES.SCHOOL_OFFICE, ROLES.FACULTY_OFFICE]);
+
+/** Văn phòng trường — phạm vi cả Trường (gồm mọi Khoa con). */
+const SCHOOL_LEVEL_UNIT_TYPES = new Set(['TRUONG', 'SCHOOL']);
+
+/** Văn phòng khoa — phạm vi một Khoa/Bộ môn. */
+const FACULTY_LEVEL_UNIT_TYPES = new Set(['KHOA', 'FACULTY', 'BO_MON', 'DEPARTMENT']);
+
+const ROLE_LABELS = {
+    [ROLES.UNIVERSITY_TRAINING]: 'Ban Đào tạo (Đại học)',
+    [ROLES.SCHOOL_OFFICE]: 'Văn phòng trường',
+    [ROLES.FACULTY_OFFICE]: 'Văn phòng khoa',
+};
+
+const ROLE_FOR_UNIT_TYPE = {
+    TRUONG: ROLES.SCHOOL_OFFICE,
+    SCHOOL: ROLES.SCHOOL_OFFICE,
+    KHOA: ROLES.FACULTY_OFFICE,
+    FACULTY: ROLES.FACULTY_OFFICE,
+    BO_MON: ROLES.FACULTY_OFFICE,
+    DEPARTMENT: ROLES.FACULTY_OFFICE,
+};
+
+module.exports = {
+    ROLES,
+    SCHOOL_SCOPED_ROLES,
+    SCHOOL_LEVEL_UNIT_TYPES,
+    FACULTY_LEVEL_UNIT_TYPES,
+    ROLE_LABELS,
+    ROLE_FOR_UNIT_TYPE,
+};

@@ -1,8 +1,18 @@
 import { useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeftOutlined, ArrowRightOutlined } from '@ant-design/icons'
-import { Avatar, Dropdown, Layout, Menu, Space } from 'antd'
+import {
+  ArrowLeftOutlined,
+  ArrowRightOutlined,
+  DownOutlined,
+  LogoutOutlined,
+} from '@ant-design/icons'
+import { Avatar, Dropdown, Layout, Menu, Typography } from 'antd'
 import { PageMetaProvider, usePageMeta } from '../../contexts/PageMetaContext'
+import { useAuth } from '../../contexts/AuthContext'
+import { filterMenuItems, canAccessRoute } from '../../config/permissions'
+import { ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants/roles'
+
+const { Text } = Typography
 import {
   getOpenMenuKeys,
   getSelectedMenuKey,
@@ -14,16 +24,44 @@ const { Sider, Content } = Layout
 export const SIDER_WIDTH = 260
 export const SIDER_COLLAPSED_WIDTH = 80
 
-const userMenuItems = [
-  { key: 'profile', label: 'Hồ sơ cá nhân' },
-  { key: 'settings', label: 'Cài đặt' },
-  { type: 'divider' },
-  { key: 'logout', label: 'Đăng xuất', danger: true },
-]
+function buildHeaderUserMeta(user) {
+  const name = (user?.full_name || user?.email || 'Người dùng').trim()
+  const initial = name.charAt(0).toUpperCase() || '?'
+  const roleShort =
+    ROLE_SHORT_LABELS[user?.role] || user?.role_label || ROLE_LABELS[user?.role] || ''
+  const unitName = user?.scope_unit?.unit_name?.trim()
+  const subtitle = unitName ? `${roleShort} · ${unitName}` : roleShort
+
+  return {
+    name,
+    initial,
+    subtitle,
+    roleLabel: user?.role_label || ROLE_LABELS[user?.role] || roleShort,
+    email: user?.email || '',
+    unitName: unitName || null,
+  }
+}
 
 function AppTopbar({ collapsed, onToggleCollapsed }) {
   const { meta } = usePageMeta()
+  const { user, logout } = useAuth()
   const siderEdge = collapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
+  const headerUser = buildHeaderUserMeta(user)
+
+  const userMenuItems = [
+    {
+      key: 'logout',
+      label: 'Đăng xuất',
+      danger: true,
+      icon: <LogoutOutlined />,
+    },
+  ]
+
+  const handleUserMenu = ({ key }) => {
+    if (key === 'logout') {
+      logout()
+    }
+  }
 
   return (
     <header className={`app-topbar ${collapsed ? 'is-sider-collapsed' : ''}`}>
@@ -42,11 +80,50 @@ function AppTopbar({ collapsed, onToggleCollapsed }) {
       <h1 className="app-topbar-title">{meta.title || '\u00A0'}</h1>
 
       <div className="app-topbar-user">
-        <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-          <Space className="app-header-user">
-            <Avatar size={32} style={{ backgroundColor: '#1677ff' }}>Q</Avatar>
-            <span className="app-header-user-name">Quản trị viên</span>
-          </Space>
+        <Dropdown
+          trigger={['click']}
+          placement="bottomRight"
+          width={300}
+          menu={{ items: userMenuItems, onClick: handleUserMenu }}
+          dropdownRender={(menu) => (
+            <div className="app-user-dropdown">
+              <div className="app-user-dropdown-head">
+                <Avatar size={40} className="app-user-dropdown-avatar">
+                  {headerUser.initial}
+                </Avatar>
+                <div className="app-user-dropdown-meta">
+                  <Text strong className="app-user-dropdown-name" ellipsis>
+                    {headerUser.name}
+                  </Text>
+                  <Text type="secondary" className="app-user-dropdown-email" ellipsis>
+                    {headerUser.email}
+                  </Text>
+                  <Text type="secondary" className="app-user-dropdown-role">
+                    {headerUser.roleLabel}
+                    {headerUser.unitName ? ` · ${headerUser.unitName}` : ''}
+                  </Text>
+                </div>
+              </div>
+              {menu}
+            </div>
+          )}
+        >
+          <button type="button" className="app-header-user" aria-label="Tài khoản">
+            <Avatar size={28} className="app-header-user-avatar">
+              {headerUser.initial}
+            </Avatar>
+            <span className="app-header-user-text">
+              <span className="app-header-user-name" title={headerUser.name}>
+                {headerUser.name}
+              </span>
+              {headerUser.subtitle ? (
+                <span className="app-header-user-sub" title={headerUser.subtitle}>
+                  {headerUser.subtitle}
+                </span>
+              ) : null}
+            </span>
+            <DownOutlined className="app-header-user-chevron" />
+          </button>
         </Dropdown>
       </div>
 
@@ -67,6 +144,12 @@ function AppLayoutShell() {
   const [collapsed, setCollapsed] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const { user } = useAuth()
+
+  const visibleMenuItems = useMemo(
+    () => filterMenuItems(menuItems, user?.role),
+    [user?.role],
+  )
 
   const selectedKey = useMemo(
     () => getSelectedMenuKey(location.pathname),
@@ -127,10 +210,12 @@ function AppLayoutShell() {
                 [menuSection]: keys.filter((key) => !routeOpenKeys.includes(key)),
               }))
             }}
-            items={menuItems}
+            items={visibleMenuItems}
             onClick={({ key }) => {
               if (key.startsWith('/')) {
-                navigate(key)
+                if (canAccessRoute(user?.role, key)) {
+                  navigate(key)
+                }
               }
             }}
           />

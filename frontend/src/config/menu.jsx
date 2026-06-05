@@ -5,7 +5,9 @@ import {
   FolderOutlined,
   RobotOutlined,
   SolutionOutlined,
+  TeamOutlined,
   UserSwitchOutlined,
+  SwapOutlined,
 } from '@ant-design/icons'
 
 export const menuItems = [
@@ -48,6 +50,11 @@ export const menuItems = [
     label: 'Phân công giảng viên',
   },
   {
+    key: '/academic/assignment-requests',
+    icon: <SwapOutlined />,
+    label: 'Yêu cầu phân công',
+  },
+  {
     key: '/ai-scheduler',
     icon: <RobotOutlined />,
     label: 'Xếp lịch AI',
@@ -57,13 +64,25 @@ export const menuItems = [
     icon: <CalendarOutlined />,
     label: 'Thời khóa biểu',
   },
+  {
+    key: 'admin',
+    icon: <TeamOutlined />,
+    label: 'Quản trị hệ thống',
+    children: [{ key: '/admin/users', label: 'Tài khoản người dùng' }],
+  },
 ]
 
 export const getOpenMenuKeys = (pathname) => {
+  if (pathname.startsWith('/admin')) {
+    return ['admin']
+  }
   if (pathname.startsWith('/master-data')) {
     return ['master-data']
   }
-  if (pathname.startsWith('/academic/lecturer-assignment')) {
+  if (
+    pathname.startsWith('/academic/lecturer-assignment') ||
+    pathname.startsWith('/academic/assignment-requests')
+  ) {
     return []
   }
   if (pathname.startsWith('/academic')) {

@@ -1,3 +1,7 @@
+# Production / demo: image tĩnh (nginx). Mỗi lần sửa code cần --build.
+# Phát triển (hot reload): ./scripts/docker-dev.sh  hoặc
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d
+
 services:
   postgres-db:
     image: postgres:15-alpine
@@ -78,6 +82,9 @@ services:
       REDIS_PORT: 6379
       AI_CORE_URL: http://core:8000
       PORT: 5000
+      JWT_SECRET: ${JWT_SECRET}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
       TZ: Asia/Ho_Chi_Minh
     depends_on:
       postgres-db:

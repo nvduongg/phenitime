@@ -16,6 +16,8 @@ import {
 import ExcelImportModal from '../../components/Common/ExcelImportModal'
 import ImportToolbarActions from '../../components/Common/ImportToolbarActions'
 import PageHeader from '../../components/Common/PageHeader'
+import { useAuth } from '../../contexts/AuthContext'
+import { isOfficeRole } from '../../config/permissions'
 import { useAppContext } from '../../contexts/AppContext'
 import { getImportTemplate } from '../../config/importTemplates'
 import { getTableScroll } from '../../config/table'
@@ -35,6 +37,8 @@ import {
 } from '../../services/api'
 
 function CourseSections() {
+  const { user } = useAuth()
+  const readOnly = isOfficeRole(user?.role)
   const { semesters, activeSemesterId } = useAppContext()
   const [sections, setSections] = useState([])
   const [loading, setLoading] = useState(true)
@@ -285,33 +289,41 @@ function CourseSections() {
       render: (_, record) =>
         formatLecturerParen(record.lecturer, record.lecturer_id) || '—',
     },
-    {
-      title: 'Hành động',
-      key: 'actions',
-      width: 80,
-      fixed: 'right',
-      render: (_, record) => (
-        <Popconfirm
-          title="Xóa lớp học phần"
-          description="Bạn có chắc chắn muốn xóa lớp học phần này?"
-          okText="Xóa"
-          cancelText="Hủy"
-          okButtonProps={{ danger: true }}
-          onConfirm={() => handleDelete(record.section_id)}
-        >
-          <Tooltip title="Xóa">
-            <Button type="text" danger icon={<DeleteOutlined />} />
-          </Tooltip>
-        </Popconfirm>
-      ),
-    },
+    ...(readOnly
+      ? []
+      : [
+          {
+            title: 'Hành động',
+            key: 'actions',
+            width: 80,
+            fixed: 'right',
+            render: (_, record) => (
+              <Popconfirm
+                title="Xóa lớp học phần"
+                description="Bạn có chắc chắn muốn xóa lớp học phần này?"
+                okText="Xóa"
+                cancelText="Hủy"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => handleDelete(record.section_id)}
+              >
+                <Tooltip title="Xóa">
+                  <Button type="text" danger icon={<DeleteOutlined />} />
+                </Tooltip>
+              </Popconfirm>
+            ),
+          },
+        ]),
   ]
 
   return (
     <Spin spinning={loading || generating}>
       <PageHeader
         title="Lớp học phần"
-        subtitle="Sinh lớp tự động từ lộ trình CTĐT hoặc nhập file TKB chính thức — không thêm/sửa thủ công."
+        subtitle={
+          readOnly
+            ? 'Chỉ xem danh sách lớp học phần. Phân công giảng viên tại mục Phân công giảng viên.'
+            : 'Sinh lớp tự động từ lộ trình CTĐT hoặc nhập file TKB chính thức — không thêm/sửa thủ công.'
+        }
         filters={
           <>
             <Select
@@ -332,19 +344,25 @@ function CourseSections() {
           </>
         }
         actions={
-          <>
-            <Button
-              type="primary"
-              icon={<ThunderboltOutlined />}
-              onClick={handleOpenAutoGenerate}
-            >
-              Sinh lớp tự động
-            </Button>
+          readOnly ? (
             <Button size="middle" icon={<ExportOutlined />} onClick={handleExport}>
               Xuất Excel
             </Button>
-            <ImportToolbarActions onImportClick={handleOpenImport} />
-          </>
+          ) : (
+            <>
+              <Button
+                type="primary"
+                icon={<ThunderboltOutlined />}
+                onClick={handleOpenAutoGenerate}
+              >
+                Sinh lớp tự động
+              </Button>
+              <Button size="middle" icon={<ExportOutlined />} onClick={handleExport}>
+                Xuất Excel
+              </Button>
+              <ImportToolbarActions onImportClick={handleOpenImport} />
+            </>
+          )
         }
       />
 
