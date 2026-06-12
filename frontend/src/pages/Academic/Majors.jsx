@@ -62,14 +62,6 @@ function Majors() {
       render: (value) => <strong>{value}</strong>,
     },
     {
-      title: 'Mã nội bộ',
-      dataIndex: 'major_id',
-      key: 'major_id',
-      width: 180,
-      render: (value, record) =>
-        record.major_code === value ? '—' : <span style={{ color: '#666' }}>{value}</span>,
-    },
-    {
       title: 'Tên ngành',
       dataIndex: 'major_name',
       key: 'major_name',
@@ -87,7 +79,7 @@ function Majors() {
     <>
       <MasterDataCrudPage
         title="Ngành đào tạo"
-        subtitle="Nhập mã ngành + tên — mã nội bộ tự sinh để phân biệt các CTĐT cùng mã quốc gia"
+        subtitle="Nhập mã ngành quốc gia và tên — hệ thống tự phân biệt các CTĐT trùng mã"
         rowKey="major_id"
         columns={columns}
         dataSource={crud.data}
@@ -119,11 +111,6 @@ function Majors() {
           >
             <Input placeholder="VD: 7480201" />
           </Form.Item>
-          {editingRecord ? (
-            <Form.Item label="Mã nội bộ">
-              <Input value={editingRecord.major_id} disabled />
-            </Form.Item>
-          ) : null}
           <Form.Item
             name="major_name"
             label="Tên ngành"

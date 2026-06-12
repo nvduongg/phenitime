@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { generateMajorId } = require('../utils/majorIdGenerator');
+const { resolveMajorIdForInsert, applyMajorIdRenames } = require('../utils/majorIdAssignment');
 
 exports.getAllMajors = async (req, res) => {
     try {
@@ -27,21 +27,29 @@ exports.createMajor = async (req, res) => {
 
         const normalizedCode = String(major_code).trim();
         const normalizedName = String(major_name).trim();
-        const existingMajors = await prisma.major.findMany({ select: { major_id: true } });
-        const major_id = generateMajorId(
+        const existingMajors = await prisma.major.findMany({
+            select: { major_id: true, major_code: true },
+        });
+        const existingIds = new Set(existingMajors.map((major) => major.major_id));
+        const { majorId, dbRenames } = resolveMajorIdForInsert(
             normalizedCode,
-            normalizedName,
-            new Set(existingMajors.map((major) => major.major_id)),
+            existingIds,
+            [],
+            existingMajors,
         );
 
-        const newMajor = await prisma.major.create({
-            data: {
-                major_id,
-                major_code: normalizedCode,
-                major_name: normalizedName,
-                unit_id,
-            },
-            include: { unit: true },
+        const newMajor = await prisma.$transaction(async (tx) => {
+            await applyMajorIdRenames(tx, dbRenames);
+
+            return tx.major.create({
+                data: {
+                    major_id: majorId,
+                    major_code: normalizedCode,
+                    major_name: normalizedName,
+                    unit_id,
+                },
+                include: { unit: true },
+            });
         });
         res.status(201).json({ status: 'success', data: newMajor });
     } catch (error) {

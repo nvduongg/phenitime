@@ -61,7 +61,7 @@ export function formatMajorLabel(major) {
   const hasDistinctInternalId = major.major_code && major.major_id !== major.major_code
 
   if (hasDistinctInternalId) {
-    return `${major.major_code} — ${name} [${major.major_id}]`
+    return `${major.major_code} — ${name} (${major.major_id})`
   }
 
   return name ? `${code} — ${name}` : String(code)

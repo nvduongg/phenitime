@@ -7,7 +7,7 @@ const {
     resolveStudentGroupCurriculum,
 } = require('../utils/studentGroupCurriculum');
 const { loadMajorLookups } = require('../utils/majorResolver');
-const { generateMajorId } = require('../utils/majorIdGenerator');
+const { resolveMajorIdForInsert, applyMajorIdRenames } = require('../utils/majorIdAssignment');
 const { resolveCourseTemplateCode } = require('../utils/sectioningTemplates');
 const { syncCourseCreditFields } = require('../utils/periodCalculator');
 const { getCourseDefaultRoomType } = require('../constants/roomTypes');
@@ -445,9 +445,12 @@ exports.importMajors = async (req, res) => {
         }
 
         const rows = parseUploadRows(req.file);
-        const existingMajors = await prisma.major.findMany({ select: { major_id: true } });
+        const existingMajors = await prisma.major.findMany({
+            select: { major_id: true, major_code: true },
+        });
         const existingIds = new Set(existingMajors.map((major) => major.major_id));
         const majorsToInsert = [];
+        const dbRenames = [];
 
         rows.forEach((row) => {
             const majorCode = pickValue(row, ['major_code', 'Mã ngành']);
@@ -455,17 +458,23 @@ exports.importMajors = async (req, res) => {
             const unitId = normalizeUnitId(
                 pickRowValue(row, ['Mã khoa', 'Khoa quản lý', 'unit_id']),
             );
-            const explicitMajorId = pickRowValue(row, ['Mã nội bộ', 'major_id']);
 
             if (!majorCode || !majorName || !unitId) return;
 
             const normalizedCode = String(majorCode).trim();
             const normalizedName = String(majorName).trim();
-            let majorId = explicitMajorId ? String(explicitMajorId).trim() : null;
-
-            if (!majorId) {
-                majorId = generateMajorId(normalizedCode, normalizedName, existingIds);
-            }
+            const resolved = resolveMajorIdForInsert(
+                normalizedCode,
+                existingIds,
+                majorsToInsert,
+                existingMajors,
+            );
+            const majorId = resolved.majorId;
+            resolved.dbRenames.forEach((rename) => {
+                if (!dbRenames.some((item) => item.from === rename.from)) {
+                    dbRenames.push(rename);
+                }
+            });
 
             if (existingIds.has(majorId)) {
                 return;
@@ -491,9 +500,13 @@ exports.importMajors = async (req, res) => {
             return sendMissingReferenceError(res, missingUnits);
         }
 
-        const result = await prisma.major.createMany({
-            data: majorsToInsert,
-            skipDuplicates: true,
+        const result = await prisma.$transaction(async (tx) => {
+            await applyMajorIdRenames(tx, dbRenames);
+
+            return tx.major.createMany({
+                data: majorsToInsert,
+                skipDuplicates: true,
+            });
         });
 
         sendImportSuccess(res, result.count, majorsToInsert.length);
@@ -948,7 +961,7 @@ exports.importStudentGroups = async (req, res) => {
             const groupId = pickValue(row, ['group_id', 'Mã lớp', 'Tên lớp']);
             const majorRef = pickValue(row, ['major_code', 'Mã ngành', 'Ngành']);
             const cohortId = pickValue(row, ['cohort_id', 'Niên khóa', 'Mã niên khóa']);
-            const internalMajorId = pickValue(row, ['major_id', 'Mã nội bộ']) || majorRef;
+            const internalMajorId = pickValue(row, ['major_id']) || majorRef;
 
             if (!groupId) return;
 

@@ -33,7 +33,7 @@ model OrganizationUnit {
   @@map("organization_units")
 }
 
-// 2. Khóa học
+// 2. Niên khóa
 model Cohort {
   cohort_id     String    @id @db.VarChar(50)
   start_year    Int
@@ -110,7 +110,7 @@ model CourseCondition {
 
 // 2. Ngành đào tạo (Major)
 model Major {
-  major_id      String    @id @db.VarChar(50)   // Mã nội bộ duy nhất (VD: 7480201-DH)
+  major_id      String    @id @db.VarChar(50)   // Mã nội bộ: trùng mã QG thì .01/.02; không trùng thì = major_code
   major_code    String    @db.VarChar(20)       // Mã ngành quốc gia — có thể trùng giữa các CTĐT
   major_name    String    @db.VarChar(255)
   unit_id       String    @db.VarChar(50)

@@ -55,10 +55,10 @@ const TEMPLATE_DEFINITIONS = [
       {
         name: 'Dữ liệu',
         rows: [
-          ['Mã ngành', 'Tên ngành', 'Mã khoa', 'Mã nội bộ'],
-          ['7480201', 'Công nghệ thông tin (Chính quy)', 'F_IT', ''],
-          ['7480201', 'Công nghệ thông tin (Liên thông)', 'F_IT', ''],
-          ['7340101', 'Quản trị kinh doanh (Chính quy)', 'F_BA', ''],
+          ['Mã ngành', 'Tên ngành', 'Mã khoa'],
+          ['7480201', 'Công nghệ thông tin (Chính quy)', 'F_IT'],
+          ['7480201', 'Công nghệ thông tin (Liên thông)', 'F_IT'],
+          ['7340101', 'Quản trị kinh doanh (Chính quy)', 'F_BA'],
         ],
       },
       {
@@ -68,7 +68,7 @@ const TEMPLATE_DEFINITIONS = [
           ['Mã ngành', 'Mã ngành quốc gia (VD: 7480201) — nhiều CTĐT có thể dùng chung', 'Có'],
           ['Tên ngành', 'Tên đầy đủ, nên ghi rõ hệ đào tạo trong ngoặc', 'Có'],
           ['Mã khoa', 'Mã đơn vị khoa quản lý (phải tồn tại trong hệ thống)', 'Có'],
-          ['Mã nội bộ', 'Để trống để hệ thống tự sinh (VD: 7480201-CQ). Chỉ điền khi cần cố định mã', 'Không'],
+          ['', 'Mã phân biệt CTĐT trùng mã quốc gia do hệ thống tự sinh — không cần nhập thêm cột', ''],
         ],
       },
     ],
@@ -177,9 +177,9 @@ const TEMPLATE_DEFINITIONS = [
         name: 'Dữ liệu',
         rows: [
           ['Mã lớp', 'Mã ngành', 'Niên khóa', 'Sĩ số'],
-          ['K16-CNTT_1', '7480201-CNTT', 'K16', 67],
-          ['K17-CNTTVJ_1', '7480201-CNTTVN', 'K17', 84],
-          ['ICT1.24105.1', '7480201-CNTT', 'K18', 139],
+          ['K16-CNTT_1', '7480201.01', 'K16', 67],
+          ['K17-CNTTVJ_1', '7480201.02', 'K17', 84],
+          ['ICT-KTPM.24105.1', '7480103', 'K18', 139],
         ],
       },
       {
@@ -187,7 +187,7 @@ const TEMPLATE_DEFINITIONS = [
         rows: [
           ['Cột', 'Mô tả', 'Bắt buộc'],
           ['Mã lớp', 'Mã lớp hành chính (VD: K16-CNTT_1, ICT1.24105.1)', 'Có'],
-          ['Mã ngành', 'Mã ngành trong danh mục (VD: 7480201-CNTT)', 'Có'],
+          ['Mã ngành', 'Mã ngành quốc gia (7480201). Nếu trùng mã, ghi thêm phân biệt (.01) hoặc để hệ thống suy từ mã lớp', 'Có'],
           ['Niên khóa', 'Mã niên khóa (VD: K16, K17) — CTĐT tự tạo nếu chưa có', 'Có'],
           ['Sĩ số', 'Số sinh viên trong lớp', 'Không'],
         ],
