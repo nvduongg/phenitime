@@ -56,7 +56,7 @@ const DAY_OPTIONS = [
 const DEFAULT_SCHEDULING = {
   default_lt_capacity: 80,
   default_th_capacity: 40,
-  default_eln_capacity: 200,
+  default_eln_capacity: 800,
   shift_duration: 3,
   allowed_start_periods: [1, 4, 7, 10, 13],
   allowed_days: [2, 3, 4, 5, 6, 7],
@@ -734,7 +734,8 @@ function AiScheduler() {
                   </Form.Item>
                   <Form.Item
                     name="default_eln_capacity"
-                    label="Sĩ số chuẩn E-Learning"
+                    label="Sĩ số tối đa / lớp E-Learning"
+                    tooltip="Ghép tối đa các nhóm SV vào một lớp ONLINE; vượt ngưỡng này mới tách ELN02, ELN03… (môn đại cương toàn trường có thể để 800)."
                     rules={[{ required: true, message: 'Bắt buộc' }]}
                   >
                     <InputNumber min={1} max={9999} style={{ width: '100%' }} />

@@ -20,6 +20,7 @@ const {
     repairGarbledClassTypeCode,
 } = require('../utils/courseImportRows');
 const { parseCourseIdList } = require('../utils/parseCourseIdList');
+const { parseLecturerImportRows } = require('../utils/lecturerImportRows');
 const { normalizeDeliveryChannelInput } = require('../utils/deliveryChannels');
 
 function parseUploadRows(file) {

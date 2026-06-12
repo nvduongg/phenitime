@@ -72,6 +72,44 @@ function normalizeStudentGroupsForPacking(studentGroups, defaultStudentCount = D
         .filter((group) => group.headcount > 0);
 }
 
+function mergeStudentGroupRecords(groupLists) {
+    const byId = new Map();
+    for (const groups of groupLists) {
+        for (const group of groups || []) {
+            if (!group?.group_id) continue;
+            if (!byId.has(group.group_id)) {
+                byId.set(group.group_id, group);
+            }
+        }
+    }
+    return [...byId.values()];
+}
+
+function resolveOnlineSectionCapacity(schedulingConfig) {
+    const configured = Number(schedulingConfig?.default_eln_capacity);
+    if (Number.isFinite(configured) && configured > 0) {
+        return configured;
+    }
+    return SECTIONING_TEMPLATES.ONLINE.cap;
+}
+
+/** Online/async courses share one pool per course_id — pack many admin groups into fewer ELN sections. */
+function shouldMergeGroupsAcrossCurricula(course) {
+    const channel = resolveDeliveryChannel(course);
+
+    if (channel === DELIVERY_CHANNELS.SPECIAL) {
+        return false;
+    }
+
+    if (channel === DELIVERY_CHANNELS.ELEARNING
+        || channel === DELIVERY_CHANNELS.HYBRID
+        || channel === DELIVERY_CHANNELS.COURSERA) {
+        return true;
+    }
+
+    return resolveCourseTemplateCode(course) === 'ONLINE';
+}
+
 function buildSectionDraft({
     course,
     semesterId,
@@ -230,7 +268,7 @@ function stampAllocatedSections({
         .filter(Boolean);
 }
 
-/** Async online track — metadata only, no AI scheduling. */
+/** Async online track — ghép tối đa nhóm SV vào ít lớp ELN; tách khi vượt default_eln_capacity. */
 function generateAsyncOnlineTrack({
     course,
     semesterId,
@@ -241,6 +279,7 @@ function generateAsyncOnlineTrack({
     channel = resolveDeliveryChannel(course),
 }) {
     const template = SECTIONING_TEMPLATES.ONLINE;
+    const onlineCap = resolveOnlineSectionCapacity(schedulingConfig);
     let onlineCourse = sliceCourseCredits(course, { theoryOnly: true });
 
     if (resolveTheoryCredits(onlineCourse) <= 0) {
@@ -253,7 +292,7 @@ function generateAsyncOnlineTrack({
 
     const slots = allocateSections(
         studentGroups,
-        template.cap,
+        onlineCap,
         groupFormatter,
     );
 
@@ -278,6 +317,7 @@ function generateCourseraHybridSections({
     schedulingConfig,
 }) {
     const onlineTemplate = SECTIONING_TEMPLATES.ONLINE;
+    const onlineCap = resolveOnlineSectionCapacity(schedulingConfig);
     const physicalTemplateCode = resolvePhysicalTemplateForSplit(course);
     const physicalTemplate = SECTIONING_TEMPLATES[physicalTemplateCode]
         || SECTIONING_TEMPLATES.LAB_COUPLED;
@@ -286,7 +326,7 @@ function generateCourseraHybridSections({
 
     const onlineSlots = allocateSections(
         studentGroups,
-        onlineTemplate.cap,
+        onlineCap,
         (index) => formatCourseraGroupCode(index),
     );
 
@@ -643,15 +683,28 @@ async function ensureStudentGroupsForCurriculum(prisma, curriculum, defaultStude
     return [created];
 }
 
+function normalizeCohortIds(options = {}) {
+    const { cohort_ids, cohort_id } = options;
+    const raw = cohort_ids ?? (cohort_id != null && String(cohort_id).trim() !== '' ? [cohort_id] : []);
+    const list = Array.isArray(raw) ? raw : [raw];
+    return [...new Set(list.map((id) => String(id).trim()).filter(Boolean))];
+}
+
 async function autoGenerateCourseSections(prisma, options = {}) {
     const {
         semester_id,
-        cohort_id,
         default_student_count: defaultStudentCount = DEFAULT_AVERAGE_COHORT_SIZE,
     } = options;
+    const cohortIds = normalizeCohortIds(options);
 
     if (!semester_id) {
         const error = new Error('Vui lòng cung cấp mã học kỳ (semester_id)');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (cohortIds.length === 0) {
+        const error = new Error('Vui lòng chọn ít nhất một niên khóa áp dụng');
         error.statusCode = 400;
         throw error;
     }
@@ -677,7 +730,7 @@ async function autoGenerateCourseSections(prisma, options = {}) {
 
     const schedulingConfig = await getSchedulingConfig(prisma);
 
-    const curriculumWhere = cohort_id ? { cohort_id } : {};
+    const curriculumWhere = { cohort_id: { in: cohortIds } };
     const curricula = await prisma.curriculum.findMany({
         where: curriculumWhere,
         include: {
@@ -689,9 +742,7 @@ async function autoGenerateCourseSections(prisma, options = {}) {
 
     if (curricula.length === 0) {
         const error = new Error(
-            cohort_id
-                ? `Không tìm thấy CTĐT cho niên khóa ${cohort_id}`
-                : 'Không tìm thấy chương trình đào tạo nào trong hệ thống',
+            `Không tìm thấy CTĐT cho niên khóa: ${cohortIds.join(', ')}`,
         );
         error.statusCode = 404;
         throw error;
@@ -761,6 +812,9 @@ async function autoGenerateCourseSections(prisma, options = {}) {
     const generatedSections = [];
     let skippedCourseCount = 0;
 
+    const mergedOnlineCourses = new Map();
+    const faceToFaceTasks = [];
+
     for (const plan of activePlans) {
         for (const roadmap of plan.roadmaps) {
             const course = roadmap.course;
@@ -771,15 +825,46 @@ async function autoGenerateCourseSections(prisma, options = {}) {
                 continue;
             }
 
-            const sections = buildSectionsForCourse({
+            if (shouldMergeGroupsAcrossCurricula(course)) {
+                const existing = mergedOnlineCourses.get(course.course_id);
+                if (existing) {
+                    existing.groupLists.push(plan.studentGroups);
+                } else {
+                    mergedOnlineCourses.set(course.course_id, {
+                        course,
+                        groupLists: [plan.studentGroups],
+                    });
+                }
+                continue;
+            }
+
+            faceToFaceTasks.push({
                 course,
-                semesterId: semester_id,
-                scheduleSuffix,
                 studentGroups: plan.studentGroups,
-                schedulingConfig,
             });
-            generatedSections.push(...sections);
         }
+    }
+
+    for (const { course, groupLists } of mergedOnlineCourses.values()) {
+        const sections = buildSectionsForCourse({
+            course,
+            semesterId: semester_id,
+            scheduleSuffix,
+            studentGroups: mergeStudentGroupRecords(groupLists),
+            schedulingConfig,
+        });
+        generatedSections.push(...sections);
+    }
+
+    for (const { course, studentGroups } of faceToFaceTasks) {
+        const sections = buildSectionsForCourse({
+            course,
+            semesterId: semester_id,
+            scheduleSuffix,
+            studentGroups,
+            schedulingConfig,
+        });
+        generatedSections.push(...sections);
     }
 
     const uniqueSections = [...new Map(generatedSections.map((section) => [
@@ -843,6 +928,7 @@ async function autoGenerateCourseSections(prisma, options = {}) {
 
 module.exports = {
     autoGenerateCourseSections,
+    normalizeCohortIds,
     allocateSections,
     buildSectionsForCourse,
     generateOnlineSections,

@@ -31,6 +31,7 @@ function SystemSettings() {
       form.setFieldsValue({
         default_lt_capacity: config.default_lt_capacity,
         default_th_capacity: config.default_th_capacity,
+        default_eln_capacity: config.default_eln_capacity,
         shift_duration: config.shift_duration,
         allowed_start_periods: config.allowed_start_periods,
         allowed_days: config.allowed_days,
@@ -83,7 +84,7 @@ function SystemSettings() {
         showIcon
         icon={<SettingOutlined />}
         message="Cấu hình áp dụng toàn hệ thống"
-        description="Các giá trị mặc định (80 / 40 / 3 tiết / ca [1,4,7,10,13]) được dùng khi chưa lưu cấu hình. Thay đổi có hiệu lực ngay cho lần sinh lớp và xếp lịch tiếp theo."
+        description="Các giá trị mặc định (LT 80 / TH 40 / ONLINE 800 / 3 tiết-ca) dùng khi chưa lưu cấu hình. Lớp trực tuyến ghép nhiều nhóm SV vào tối thiểu số lớp; chỉ tách khi vượt sĩ số tối đa ONLINE."
         style={{ marginBottom: 16 }}
       />
 
@@ -110,6 +111,18 @@ function SystemSettings() {
               ]}
             >
               <InputNumber min={1} max={500} style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item
+              name="default_eln_capacity"
+              label="Sĩ số tối đa / lớp E-Learning (ONLINE)"
+              tooltip="Cố ghép mọi nhóm sinh viên vào ít lớp ONLINE nhất. Chỉ tách thêm lớp khi tổng sĩ số vượt ngưỡng này (VD: môn đại cương toàn trường có thể nhiều lớp 800)."
+              rules={[
+                { required: true, message: 'Vui lòng nhập sĩ số tối đa ONLINE' },
+                { type: 'number', min: 1, message: 'Sĩ số phải lớn hơn 0' },
+              ]}
+            >
+              <InputNumber min={1} max={9999} style={{ width: '100%' }} />
             </Form.Item>
 
             <Form.Item

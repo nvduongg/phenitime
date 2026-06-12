@@ -1,15 +1,16 @@
 import {
-  formatCurriculumNames,
   formatExportDateLong,
   formatExportDateShort,
   formatLecturerDash,
   formatLecturerParen,
   formatStudentGroupNames,
+  formatCohortIdsForExport,
   resolveSectionDateRange,
   resolveSectionContext,
   resolveWeeklyPeriodsForTimetableRow,
   resolveSectionClassType,
   formatSectionIdForExport,
+  resolveExpectedEnrollment,
 } from '../utils/exportFormatters'
 import { formatTimetableRoom } from '../constants/roomTypes'
 
@@ -36,7 +37,15 @@ export const buildCourseSectionExportColumns = ({ semesterLookup } = {}) => [
   },
   {
     title: 'Số lượng',
-    exportValue: (row) => row.capacity ?? '',
+    exportValue: (row) => resolveExpectedEnrollment(row),
+  },
+  {
+    title: 'Nhóm KS',
+    exportValue: (row) => formatStudentGroupNames(row.student_groups),
+  },
+  {
+    title: 'Niên khóa',
+    exportValue: (row) => formatCohortIdsForExport(row.student_groups),
   },
   {
     title: 'Giảng viên',
@@ -102,7 +111,7 @@ export const buildTimetableExportColumns = ({ sectionLookup } = {}) => [
     title: 'Số SV dự kiến ',
     exportValue: (row) => {
       const section = resolveSectionContext(row, sectionLookup)
-      return section.capacity ?? ''
+      return resolveExpectedEnrollment(section)
     },
   },
   {
@@ -161,10 +170,10 @@ export const buildTimetableExportColumns = ({ sectionLookup } = {}) => [
     },
   },
   {
-    title: 'Khóa học',
+    title: 'Niên khóa',
     exportValue: (row) => {
       const section = resolveSectionContext(row, sectionLookup)
-      return formatCurriculumNames(section.student_groups)
+      return formatCohortIdsForExport(section.student_groups)
     },
   },
   {

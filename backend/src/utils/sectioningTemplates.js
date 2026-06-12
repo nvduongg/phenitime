@@ -22,7 +22,7 @@ const SECTIONING_TEMPLATES = {
         thRoom: 'PC',
     },
     ONLINE: {
-        cap: 200,
+        cap: 800,
         room: 'ONLINE',
     },
     MEDICAL_CLINIC: {

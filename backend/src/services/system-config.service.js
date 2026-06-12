@@ -3,7 +3,8 @@ const SCHEDULING_CONFIG_KEY = 'scheduling';
 const DEFAULT_SCHEDULING_CONFIG = {
     default_lt_capacity: 80,
     default_th_capacity: 40,
-    default_eln_capacity: 200,
+    /** Max SV / lớp ONLINE trước khi tách thêm ELN02… (ghép tối đa vào 1 lớp nếu tổng ≤ giá trị này). */
+    default_eln_capacity: 800,
     shift_duration: 3,
     max_teaching_weeks: 10,
     stretch_to_full_semester: true,

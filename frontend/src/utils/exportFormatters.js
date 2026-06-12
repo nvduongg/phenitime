@@ -93,6 +93,32 @@ export const formatCurriculumNames = (studentGroups = []) => {
   return names.join(';')
 }
 
+/** Mã niên khóa gọn cho Excel (VD: K17), không dùng tên CTĐT dài. */
+export const formatCohortIdsForExport = (studentGroups = []) => {
+  const ids = [
+    ...new Set(
+      studentGroups
+        .map((group) => group.curriculum?.cohort_id || group.curriculum?.cohort?.cohort_id)
+        .filter(Boolean),
+    ),
+  ]
+  return ids.sort((a, b) => String(b).localeCompare(String(a), 'vi')).join('; ')
+}
+
+/** Sĩ số dự kiến = tổng student_count các nhóm KS (phản ánh lớp ONLINE ghép nhiều nhóm). */
+export const resolveExpectedEnrollment = (section) => {
+  const groups = section?.student_groups || []
+  if (!groups.length) {
+    return section?.capacity ?? ''
+  }
+
+  const total = groups.reduce(
+    (sum, group) => sum + (Number(group.student_count) || 0),
+    0,
+  )
+  return total > 0 ? total : section?.capacity ?? ''
+}
+
 import {
   calculateScheduleParams,
   resolveSectionScheduleDisplay,

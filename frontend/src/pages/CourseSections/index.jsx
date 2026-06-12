@@ -3,6 +3,7 @@ import { DeleteOutlined, ExportOutlined, ThunderboltOutlined } from '@ant-design
 import {
   Alert,
   Button,
+  Checkbox,
   Input,
   Modal,
   Popconfirm,
@@ -33,8 +34,10 @@ import { resolveSectionScheduleDisplay } from '../../utils/periodCalculator'
 import {
   autoGenerateSections,
   deleteCourseSection,
+  getCohorts,
   getCourseSections,
 } from '../../services/api'
+import { formatCohortLabel } from '../../utils/formatters'
 
 function CourseSections() {
   const { user } = useAuth()
@@ -47,6 +50,8 @@ function CourseSections() {
   const [semesterFilter, setSemesterFilter] = useState(undefined)
   const [importOpen, setImportOpen] = useState(false)
   const [autoGenOpen, setAutoGenOpen] = useState(false)
+  const [cohortOptions, setCohortOptions] = useState([])
+  const [selectedCohortIds, setSelectedCohortIds] = useState([])
 
   const effectiveSemesterFilter =
     semesterFilter !== undefined ? semesterFilter : activeSemesterId
@@ -63,6 +68,23 @@ function CourseSections() {
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    getCohorts()
+      .then((result) => {
+        setCohortOptions(
+          (result.data || [])
+            .map((cohort) => ({
+              value: cohort.cohort_id,
+              label: formatCohortLabel(cohort),
+            }))
+            .sort((a, b) => b.value.localeCompare(a.value, 'vi')),
+        )
+      })
+      .catch(() => {
+        // Error handled by axios interceptor
+      })
   }, [])
 
   useEffect(() => {
@@ -139,6 +161,11 @@ function CourseSections() {
   }
 
   const handleAutoGenerate = async () => {
+    if (selectedCohortIds.length === 0) {
+      message.warning('Vui lòng chọn ít nhất một niên khóa')
+      return
+    }
+
     setAutoGenOpen(false)
     setGenerating(true)
 
@@ -150,7 +177,10 @@ function CourseSections() {
     })
 
     try {
-      const result = await autoGenerateSections({ semester_id: effectiveSemesterFilter })
+      const result = await autoGenerateSections({
+        semester_id: effectiveSemesterFilter,
+        cohort_ids: selectedCohortIds,
+      })
       const createdCount = result.created_count ?? result.data?.length ?? 0
 
       message.success({
@@ -394,17 +424,72 @@ function CourseSections() {
         okText="Sinh lớp"
         cancelText="Hủy"
         confirmLoading={generating}
+        okButtonProps={{ disabled: selectedCohortIds.length === 0 }}
         destroyOnHidden
       >
         <p>
-          Hệ thống sẽ dựa vào Lộ trình chuẩn của CTĐT để tính toán và tự động mở các lớp
-          học phần cho học kỳ này. Bạn có chắc chắn muốn thực hiện?
+          Chọn một hoặc nhiều niên khóa — hệ thống sinh lớp theo lộ trình CTĐT tương ứng
+          cho học kỳ đã chọn trên toolbar.
         </p>
+        <div style={{ marginBottom: 16 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 8,
+            }}
+          >
+            <span style={{ fontWeight: 500 }}>Niên khóa áp dụng</span>
+            <span style={{ display: 'inline-flex', gap: 8 }}>
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0, height: 'auto' }}
+                onClick={() => setSelectedCohortIds(cohortOptions.map((item) => item.value))}
+                disabled={cohortOptions.length === 0}
+              >
+                Chọn tất cả
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0, height: 'auto' }}
+                onClick={() => setSelectedCohortIds([])}
+                disabled={selectedCohortIds.length === 0}
+              >
+                Bỏ chọn
+              </Button>
+            </span>
+          </div>
+          <div className="auto-gen-cohort-list">
+            {cohortOptions.length === 0 ? (
+              <span style={{ color: '#64748b', fontSize: 13 }}>Chưa có niên khóa trong hệ thống</span>
+            ) : (
+              <Checkbox.Group
+                value={selectedCohortIds}
+                onChange={setSelectedCohortIds}
+                style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+              >
+                {cohortOptions.map((option) => (
+                  <Checkbox key={option.value} value={option.value}>
+                    {option.label}
+                  </Checkbox>
+                ))}
+              </Checkbox.Group>
+            )}
+          </div>
+          {selectedCohortIds.length > 0 ? (
+            <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
+              Đã chọn {selectedCohortIds.length} niên khóa
+            </div>
+          ) : null}
+        </div>
         <Alert
           type="warning"
           showIcon
           message="Lưu ý"
-          description="Các lớp học phần cũ (cùng Nhóm KS) trong học kỳ đã chọn sẽ bị thay thế trước khi sinh lại."
+          description="Các lớp học phần thuộc nhóm sinh viên của niên khóa đã chọn trong học kỳ này sẽ bị thay thế trước khi sinh lại."
         />
       </Modal>
     </Spin>

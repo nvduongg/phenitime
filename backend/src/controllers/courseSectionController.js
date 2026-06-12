@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 const { getAiCoreApiUrl } = require('../config/aiCore');
 
-const { autoGenerateCourseSections } = require('../services/course-sections.service');
+const { autoGenerateCourseSections, normalizeCohortIds } = require('../services/course-sections.service');
 const { SCHOOL_SCOPED_ROLES } = require('../constants/roles');
 const {
     SECTION_LIST_INCLUDE,
@@ -246,6 +246,7 @@ exports.autoGenerateSections = async (req, res) => {
         }
 
         const { semester_id } = req.body;
+        const cohortIds = normalizeCohortIds(req.body);
 
         if (!semester_id) {
             return res.status(400).json({
@@ -254,7 +255,17 @@ exports.autoGenerateSections = async (req, res) => {
             });
         }
 
-        const result = await autoGenerateCourseSections(prisma, req.body);
+        if (cohortIds.length === 0) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Vui lòng chọn ít nhất một niên khóa áp dụng',
+            });
+        }
+
+        const result = await autoGenerateCourseSections(prisma, {
+            ...req.body,
+            cohort_ids: cohortIds,
+        });
 
         return res.status(result.createdCount > 0 ? 201 : 200).json({
             status: 'success',

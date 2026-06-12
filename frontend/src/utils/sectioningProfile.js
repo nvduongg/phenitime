@@ -4,7 +4,7 @@ import { normalizeDeliveryChannel, DELIVERY_CHANNELS } from '../constants/delive
 const SECTIONING_TEMPLATES = {
   STANDARD: { ltCap: 80, thCap: 40, ltRoom: 'STD', thRoom: 'TH' },
   LAB_COUPLED: { syncCap: 45, ltRoom: 'PC', thRoom: 'PC' },
-  ONLINE: { cap: 200, room: 'ONLINE' },
+  ONLINE: { cap: 800, room: 'ONLINE' },
   MEDICAL_CLINIC: { cap: 20, room: 'MED' },
 }
 
