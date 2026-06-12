@@ -83,6 +83,8 @@ data/
 reports/
 paper_vnict/
 IEEECS_CPS_2026/
+report_science_research/
+report_thesis_graduation/
 
 # --- Cursor / editor artifacts ---
 .cursor/
