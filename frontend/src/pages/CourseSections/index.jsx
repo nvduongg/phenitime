@@ -5,6 +5,7 @@ import {
   Button,
   Checkbox,
   Input,
+  InputNumber,
   Modal,
   Popconfirm,
   Select,
@@ -21,10 +22,10 @@ import { useAuth } from '../../contexts/AuthContext'
 import { isOfficeRole } from '../../config/permissions'
 import { useAppContext } from '../../contexts/AppContext'
 import { getImportTemplate } from '../../config/importTemplates'
-import { getTableScroll } from '../../config/table'
+import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
 import { buildCourseSectionExportColumns } from '../../config/exportColumns'
 import { renderLearningModeTag } from '../../constants/learningModes'
-import { sortCourseSectionsForExport } from '../../utils/exportFormatters'
+import { sortCourseSectionsForExport, resolveExpectedEnrollment, sectionMatchesCohortFilter } from '../../utils/exportFormatters'
 import {
   buildExportFilename,
   exportToExcel,
@@ -38,6 +39,34 @@ import {
   getCourseSections,
 } from '../../services/api'
 import { formatCohortLabel } from '../../utils/formatters'
+import { loadCohortFilter, saveCohortFilter } from '../../utils/cohortFilterStorage'
+
+const SECTION_CAPS_STORAGE_KEY = 'phenitime:sectionGenerationCaps'
+
+const DEFAULT_SECTION_CAPS = {
+  default_lt_capacity: 80,
+  default_th_capacity: 40,
+  default_eln_capacity: 800,
+  default_cour_capacity: 240,
+}
+
+function loadSectionCaps() {
+  try {
+    const raw = localStorage.getItem(SECTION_CAPS_STORAGE_KEY)
+    if (!raw) return { ...DEFAULT_SECTION_CAPS }
+    return { ...DEFAULT_SECTION_CAPS, ...JSON.parse(raw) }
+  } catch {
+    return { ...DEFAULT_SECTION_CAPS }
+  }
+}
+
+function saveSectionCaps(caps) {
+  try {
+    localStorage.setItem(SECTION_CAPS_STORAGE_KEY, JSON.stringify(caps))
+  } catch {
+    // ignore quota / private mode
+  }
+}
 
 function CourseSections() {
   const { user } = useAuth()
@@ -52,6 +81,16 @@ function CourseSections() {
   const [autoGenOpen, setAutoGenOpen] = useState(false)
   const [cohortOptions, setCohortOptions] = useState([])
   const [selectedCohortIds, setSelectedCohortIds] = useState([])
+  const [cohortFilter, setCohortFilterState] = useState(() => loadCohortFilter())
+  const [sectionCaps, setSectionCaps] = useState(DEFAULT_SECTION_CAPS)
+
+  const setCohortFilter = useCallback((value) => {
+    setCohortFilterState((prev) => {
+      const next = typeof value === 'function' ? value(prev) : value
+      saveCohortFilter(next)
+      return next
+    })
+  }, [])
 
   const effectiveSemesterFilter =
     semesterFilter !== undefined ? semesterFilter : activeSemesterId
@@ -62,9 +101,12 @@ function CourseSections() {
     setLoading(true)
     try {
       const result = await getCourseSections()
-      setSections(result.data || [])
+      const data = result.data || []
+      setSections(data)
+      return data
     } catch {
       // Error handled by axios interceptor
+      return null
     } finally {
       setLoading(false)
     }
@@ -124,6 +166,7 @@ function CourseSections() {
       const matchSemester = effectiveSemesterFilter
         ? item.semester_id === effectiveSemesterFilter
         : true
+      const matchCohort = sectionMatchesCohortFilter(item, cohortFilter)
       const keyword = searchText.trim().toLowerCase()
       const matchSearch = keyword
         ? [
@@ -140,9 +183,9 @@ function CourseSections() {
             .filter(Boolean)
             .some((field) => String(field).toLowerCase().includes(keyword))
         : true
-      return matchSemester && matchSearch
+      return matchSemester && matchCohort && matchSearch
     })
-  }, [sections, effectiveSemesterFilter, searchText])
+  }, [sections, effectiveSemesterFilter, cohortFilter, searchText])
 
   const handleOpenImport = () => {
     if (!effectiveSemesterFilter) {
@@ -157,6 +200,7 @@ function CourseSections() {
       message.warning('Vui lòng chọn học kỳ trước khi sinh lớp tự động')
       return
     }
+    setSectionCaps(loadSectionCaps())
     setAutoGenOpen(true)
   }
 
@@ -177,17 +221,25 @@ function CourseSections() {
     })
 
     try {
+      saveSectionCaps(sectionCaps)
       const result = await autoGenerateSections({
         semester_id: effectiveSemesterFilter,
         cohort_ids: selectedCohortIds,
+        default_lt_capacity: sectionCaps.default_lt_capacity,
+        default_th_capacity: sectionCaps.default_th_capacity,
+        default_eln_capacity: sectionCaps.default_eln_capacity,
+        default_cour_capacity: sectionCaps.default_cour_capacity,
       })
       const createdCount = result.created_count ?? result.data?.length ?? 0
+
+      await fetchSections()
+
+      setCohortFilter([...selectedCohortIds])
 
       message.success({
         content: result.message || `Đã sinh thành công ${createdCount} lớp học phần!`,
         key: loadingKey,
       })
-      fetchSections()
     } catch {
       message.destroy(loadingKey)
     } finally {
@@ -206,6 +258,11 @@ function CourseSections() {
   )
 
   const handleExport = () => {
+    if (loading || generating) {
+      message.warning('Đang tải dữ liệu mới, vui lòng đợi vài giây rồi xuất lại')
+      return
+    }
+
     if (filteredSections.length === 0) {
       message.warning('Không có dữ liệu để xuất')
       return
@@ -218,7 +275,11 @@ function CourseSections() {
       filename,
       { sheetName: 'Lop hoc phan' },
     )
-    message.success('Xuất file Excel thành công')
+    message.success(
+      cohortFilter.length
+        ? `Đã xuất ${filteredSections.length} lớp (${cohortFilter.join(', ')}) — ${filename}`
+        : `Đã xuất ${filteredSections.length} lớp — ${filename}`,
+    )
   }
 
   const handleDelete = async (sectionId) => {
@@ -236,14 +297,13 @@ function CourseSections() {
       title: 'Mã lớp',
       dataIndex: 'section_id',
       key: 'section_id',
-      ellipsis: true,
-      width: 320,
+      minWidth: 280,
       render: (value) => <span className="section-id-cell">{value}</span>,
     },
     {
       title: 'Tên học phần',
       key: 'course_name',
-      ellipsis: true,
+      minWidth: 220,
       render: (_, record) => record.course?.course_name || record.course_id,
     },
     {
@@ -254,15 +314,15 @@ function CourseSections() {
     },
     {
       title: 'Sĩ số dự kiến',
-      dataIndex: 'capacity',
+      key: 'expected_enrollment',
       align: 'center',
-      key: 'capacity',
       width: 120,
+      render: (_, record) => resolveExpectedEnrollment(record) || '—',
     },
     {
       title: 'Khối lượng tuần',
       key: 'schedule_load',
-      width: 220,
+      minWidth: 240,
       render: (_, record) => {
         const schedule = resolveSectionScheduleDisplay(record)
         if (!schedule?.stPerWeek) {
@@ -295,7 +355,7 @@ function CourseSections() {
     {
       title: 'Lớp sinh viên',
       key: 'student_groups',
-      width: 180,
+      minWidth: 200,
       render: (_, record) => {
         const groups = record.student_groups || []
         if (groups.length === 0) {
@@ -315,7 +375,7 @@ function CourseSections() {
     {
       title: 'Giảng viên',
       key: 'lecturer',
-      ellipsis: true,
+      minWidth: 180,
       render: (_, record) =>
         formatLecturerParen(record.lecturer, record.lecturer_id) || '—',
     },
@@ -364,6 +424,16 @@ function CourseSections() {
               value={effectiveSemesterFilter}
               onChange={setSemesterFilter}
             />
+            <Select
+              allowClear
+              mode="multiple"
+              placeholder="Lọc niên khóa (xuất Excel)"
+              style={{ minWidth: 240 }}
+              options={cohortOptions}
+              value={cohortFilter}
+              onChange={setCohortFilter}
+              maxTagCount="responsive"
+            />
             <Input.Search
               allowClear
               placeholder="Tìm kiếm mã lớp, học phần, nhóm KS, giảng viên..."
@@ -375,7 +445,12 @@ function CourseSections() {
         }
         actions={
           readOnly ? (
-            <Button size="middle" icon={<ExportOutlined />} onClick={handleExport}>
+            <Button
+              size="middle"
+              icon={<ExportOutlined />}
+              onClick={handleExport}
+              disabled={loading || generating}
+            >
               Xuất Excel
             </Button>
           ) : (
@@ -387,7 +462,12 @@ function CourseSections() {
               >
                 Sinh lớp tự động
               </Button>
-              <Button size="middle" icon={<ExportOutlined />} onClick={handleExport}>
+              <Button
+                size="middle"
+                icon={<ExportOutlined />}
+                onClick={handleExport}
+                disabled={loading || generating}
+              >
                 Xuất Excel
               </Button>
               <ImportToolbarActions onImportClick={handleOpenImport} />
@@ -397,11 +477,12 @@ function CourseSections() {
       />
 
       <Table
+        className={TABLE_SCROLL_CLASS}
         rowKey="section_id"
         columns={columns}
         dataSource={filteredSections}
         pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} lớp học phần` }}
-        scroll={getTableScroll(1280)}
+        scroll={getTableScroll(1680)}
         sticky
       />
 
@@ -418,6 +499,8 @@ function CourseSections() {
 
       <Modal
         title="Sinh lớp tự động"
+        className="auto-gen-modal"
+        width={780}
         open={autoGenOpen}
         onCancel={() => setAutoGenOpen(false)}
         onOk={handleAutoGenerate}
@@ -426,71 +509,161 @@ function CourseSections() {
         confirmLoading={generating}
         okButtonProps={{ disabled: selectedCohortIds.length === 0 }}
         destroyOnHidden
+        centered
       >
-        <p>
-          Chọn một hoặc nhiều niên khóa — hệ thống sinh lớp theo lộ trình CTĐT tương ứng
-          cho học kỳ đã chọn trên toolbar.
+        <p className="auto-gen-modal__lead">
+          Sinh lớp theo lộ trình CTĐT cho học kỳ đang chọn trên toolbar.
         </p>
-        <div style={{ marginBottom: 16 }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 8,
-            }}
-          >
-            <span style={{ fontWeight: 500 }}>Niên khóa áp dụng</span>
-            <span style={{ display: 'inline-flex', gap: 8 }}>
-              <Button
-                type="link"
-                size="small"
-                style={{ padding: 0, height: 'auto' }}
-                onClick={() => setSelectedCohortIds(cohortOptions.map((item) => item.value))}
-                disabled={cohortOptions.length === 0}
-              >
-                Chọn tất cả
-              </Button>
-              <Button
-                type="link"
-                size="small"
-                style={{ padding: 0, height: 'auto' }}
-                onClick={() => setSelectedCohortIds([])}
-                disabled={selectedCohortIds.length === 0}
-              >
-                Bỏ chọn
-              </Button>
-            </span>
-          </div>
-          <div className="auto-gen-cohort-list">
-            {cohortOptions.length === 0 ? (
-              <span style={{ color: '#64748b', fontSize: 13 }}>Chưa có niên khóa trong hệ thống</span>
-            ) : (
-              <Checkbox.Group
-                value={selectedCohortIds}
-                onChange={setSelectedCohortIds}
-                style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
-              >
-                {cohortOptions.map((option) => (
-                  <Checkbox key={option.value} value={option.value}>
-                    {option.label}
-                  </Checkbox>
-                ))}
-              </Checkbox.Group>
-            )}
-          </div>
-          {selectedCohortIds.length > 0 ? (
-            <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
-              Đã chọn {selectedCohortIds.length} niên khóa
+
+        <div className="auto-gen-modal__body">
+          <div className="auto-gen-modal__panel auto-gen-modal__panel--config">
+            <div className="auto-gen-modal__panel-title">Trần ghép lớp</div>
+            <p className="auto-gen-modal__hint">
+              Sĩ số tối đa mỗi lớp khi tách LT, TH/PM và ONLINE. Phòng máy thực tế 40–45 chỗ;
+              hệ thống lập kế hoạch theo trần an toàn 40 cho TH/PM (dù bạn nhập 45).
+            </p>
+
+            <div className="auto-gen-modal__caps">
+              <div className="auto-gen-modal__field">
+                <label className="auto-gen-modal__field-label" htmlFor="auto-gen-lt-cap">
+                  Sĩ số chuẩn LT
+                </label>
+                <InputNumber
+                  id="auto-gen-lt-cap"
+                  min={1}
+                  max={500}
+                  className="auto-gen-modal__field-input"
+                  value={sectionCaps.default_lt_capacity}
+                  onChange={(value) =>
+                    setSectionCaps((prev) => ({
+                      ...prev,
+                      default_lt_capacity: value ?? DEFAULT_SECTION_CAPS.default_lt_capacity,
+                    }))}
+                />
+              </div>
+              <div className="auto-gen-modal__field">
+                <label className="auto-gen-modal__field-label" htmlFor="auto-gen-th-cap">
+                  Sĩ số chuẩn TH/PM
+                </label>
+                <InputNumber
+                  id="auto-gen-th-cap"
+                  min={1}
+                  max={500}
+                  className="auto-gen-modal__field-input"
+                  value={sectionCaps.default_th_capacity}
+                  onChange={(value) =>
+                    setSectionCaps((prev) => ({
+                      ...prev,
+                      default_th_capacity: value ?? DEFAULT_SECTION_CAPS.default_th_capacity,
+                    }))}
+                />
+                <span className="auto-gen-modal__field-hint">
+                  Trần tham chiếu; tách lớp PM/PC dùng min(giá trị này, 40) vì phòng máy không đồng nhất.
+                </span>
+              </div>
+              <div className="auto-gen-modal__field">
+                <label className="auto-gen-modal__field-label" htmlFor="auto-gen-cour-cap">
+                  Sĩ số tối đa / track Coursera
+                </label>
+                <InputNumber
+                  id="auto-gen-cour-cap"
+                  min={1}
+                  max={9999}
+                  className="auto-gen-modal__field-input"
+                  value={sectionCaps.default_cour_capacity}
+                  onChange={(value) =>
+                    setSectionCaps((prev) => ({
+                      ...prev,
+                      default_cour_capacity: value ?? DEFAULT_SECTION_CAPS.default_cour_capacity,
+                    }))}
+                />
+                <span className="auto-gen-modal__field-hint">
+                  TKB thực thường 200–280 SV / COUR01; tách COUR02… khi vượt.
+                </span>
+              </div>
+              <div className="auto-gen-modal__field">
+                <label className="auto-gen-modal__field-label" htmlFor="auto-gen-eln-cap">
+                  Sĩ số tối đa / lớp ONLINE (ELN)
+                </label>
+                <InputNumber
+                  id="auto-gen-eln-cap"
+                  min={1}
+                  max={9999}
+                  className="auto-gen-modal__field-input"
+                  value={sectionCaps.default_eln_capacity}
+                  onChange={(value) =>
+                    setSectionCaps((prev) => ({
+                      ...prev,
+                      default_eln_capacity: value ?? DEFAULT_SECTION_CAPS.default_eln_capacity,
+                    }))}
+                />
+                <span className="auto-gen-modal__field-hint">
+                  Chỉ áp dụng học phần e-learning thuần; Coursera dùng trần riêng ở trên.
+                </span>
+              </div>
             </div>
-          ) : null}
+
+            <Alert
+              type="warning"
+              showIcon
+              className="auto-gen-modal__warn"
+              message="Lớp cũ của niên khóa đã chọn sẽ bị thay thế. Lớp trùng mã (cùng học phần) từ niên khóa khác cũng được ghi đè."
+            />
+          </div>
+
+          <div className="auto-gen-modal__panel auto-gen-modal__panel--cohorts">
+            <div className="auto-gen-modal__panel-head">
+              <div>
+                <div className="auto-gen-modal__panel-title">Niên khóa áp dụng</div>
+                {selectedCohortIds.length > 0 ? (
+                  <span className="auto-gen-modal__selected-count">
+                    Đã chọn {selectedCohortIds.length}
+                  </span>
+                ) : (
+                  <span className="auto-gen-modal__selected-count auto-gen-modal__selected-count--empty">
+                    Chưa chọn niên khóa
+                  </span>
+                )}
+              </div>
+              <span className="auto-gen-modal__panel-actions">
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => setSelectedCohortIds(cohortOptions.map((item) => item.value))}
+                  disabled={cohortOptions.length === 0}
+                >
+                  Tất cả
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => setSelectedCohortIds([])}
+                  disabled={selectedCohortIds.length === 0}
+                >
+                  Bỏ chọn
+                </Button>
+              </span>
+            </div>
+
+            <div className="auto-gen-cohort-list auto-gen-cohort-list--grid">
+              {cohortOptions.length === 0 ? (
+                <span className="auto-gen-modal__empty">Chưa có niên khóa</span>
+              ) : (
+                <Checkbox.Group
+                  value={selectedCohortIds}
+                  onChange={setSelectedCohortIds}
+                  className="auto-gen-cohort-grid"
+                >
+                  {cohortOptions.map((option) => (
+                    <Checkbox key={option.value} value={option.value}>
+                      {option.label}
+                    </Checkbox>
+                  ))}
+                </Checkbox.Group>
+              )}
+            </div>
+          </div>
         </div>
-        <Alert
-          type="warning"
-          showIcon
-          message="Lưu ý"
-          description="Các lớp học phần thuộc nhóm sinh viên của niên khóa đã chọn trong học kỳ này sẽ bị thay thế trước khi sinh lại."
-        />
       </Modal>
     </Spin>
   )

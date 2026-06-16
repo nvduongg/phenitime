@@ -17,7 +17,7 @@ const SECTIONING_TEMPLATES = {
         thRoom: 'TH',
     },
     LAB_COUPLED: {
-        syncCap: 45,
+        syncCap: 40,
         ltRoom: 'PC',
         thRoom: 'PC',
     },

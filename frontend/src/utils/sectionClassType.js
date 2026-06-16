@@ -18,12 +18,13 @@ function isOnlineSectionGroupCode(groupCode) {
 
 export { isCourseraBaseGroupCode, isCourseraPracticeGroupCode }
 
+/** Hình thức học xuất Excel / hiển thị: ELN (e-learning LMS), không dùng ELN0. */
 function resolveOnlineExportClassType(sectionClassType = 'ELN') {
   const normalized = String(sectionClassType || '').trim().toUpperCase()
-  if (['ELN', 'ONLINE_ELEARNING', 'ONLINE_COURSERA', 'ELEARNING', 'COURSERA'].includes(normalized)) {
-    return 'ELN0'
+  if (['ELN', 'ELN0', 'ONLINE_ELEARNING', 'ELEARNING', 'ONLINE'].includes(normalized)) {
+    return 'ELN'
   }
-  return normalized || 'ELN0'
+  return normalized || 'ELN'
 }
 
 export function parseSectionGroupCode(sectionId) {
@@ -47,10 +48,14 @@ export function resolveSectionClassType(section) {
     return 'TH'
   }
 
-  if (isCourseraBaseGroupCode(groupCode) || (
+  if (isCourseraBaseGroupCode(groupCode)) {
+    return 'COUR'
+  }
+
+  if (
     isOnlineSectionGroupCode(groupCode)
     && normalizeLearningType(section.room_type_req) === 'ONLINE'
-  )) {
+  ) {
     return resolveOnlineExportClassType(stored)
   }
 

@@ -3,7 +3,7 @@ import {
   formatExportDateShort,
   formatLecturerDash,
   formatLecturerParen,
-  formatStudentGroupNames,
+  formatStudentGroupNamesForExport,
   formatCohortIdsForExport,
   resolveSectionDateRange,
   resolveSectionContext,
@@ -41,7 +41,7 @@ export const buildCourseSectionExportColumns = ({ semesterLookup } = {}) => [
   },
   {
     title: 'Nhóm KS',
-    exportValue: (row) => formatStudentGroupNames(row.student_groups),
+    exportValue: (row) => formatStudentGroupNamesForExport(row),
   },
   {
     title: 'Niên khóa',
@@ -180,7 +180,7 @@ export const buildTimetableExportColumns = ({ sectionLookup } = {}) => [
     title: 'Nhóm KS',
     exportValue: (row) => {
       const section = resolveSectionContext(row, sectionLookup)
-      return formatStudentGroupNames(section.student_groups)
+      return formatStudentGroupNamesForExport(section)
     },
   },
 ]

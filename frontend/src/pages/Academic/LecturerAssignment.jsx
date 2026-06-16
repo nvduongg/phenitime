@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { RobotOutlined, SendOutlined } from '@ant-design/icons'
 import { Alert, Button, Empty, Input, Modal, Select, Spin, Table, Tag, Typography, message } from 'antd'
 
@@ -26,16 +26,20 @@ import {
   hasPendingAssignmentRequest,
   requiresAssignmentRequest,
 } from '../../utils/assignmentScope'
-import { getTableScroll } from '../../config/table'
+import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
 import {
   autoAssignLecturers,
   bulkCreateAssignmentRequests,
   createAssignmentRequest,
+  getCohorts,
   getCourseSections,
   getLecturers,
   updateCourseSection,
 } from '../../services/api'
 import { renderLearningModeTag } from '../../constants/learningModes'
+import { sectionMatchesCohortFilter } from '../../utils/exportFormatters'
+import { loadCohortFilter, saveCohortFilter } from '../../utils/cohortFilterStorage'
+import { formatCohortLabel } from '../../utils/formatters'
 
 const ASSIGNMENT_STATUS_COLORS = {
   assigned: '#52c41a',
@@ -51,10 +55,13 @@ function getSectionTeachingWeight(section) {
 
 function LecturerAssignment() {
   const { user } = useAuth()
+  const location = useLocation()
   const { semesters, activeSemesterId } = useAppContext()
   const scopedOffice = isOfficeRole(user?.role)
   const [lecturers, setLecturers] = useState([])
   const [sections, setSections] = useState([])
+  const [cohortOptions, setCohortOptions] = useState([])
+  const [cohortFilter, setCohortFilterState] = useState(() => loadCohortFilter())
   const [selectedSemester, setSelectedSemester] = useState(undefined)
   const [loading, setLoading] = useState(false)
   const [autoAssigning, setAutoAssigning] = useState(false)
@@ -69,6 +76,19 @@ function LecturerAssignment() {
   const effectiveSemester =
     selectedSemester !== undefined ? selectedSemester : activeSemesterId
 
+  const setCohortFilter = useCallback((value) => {
+    setCohortFilterState((prev) => {
+      const next = typeof value === 'function' ? value(prev) : value
+      saveCohortFilter(next)
+      return next
+    })
+  }, [])
+
+  const filteredSections = useMemo(
+    () => sections.filter((section) => sectionMatchesCohortFilter(section, cohortFilter)),
+    [sections, cohortFilter],
+  )
+
   const lecturerOptions = useMemo(
     () =>
       lecturers.map((lecturer) => ({
@@ -79,13 +99,13 @@ function LecturerAssignment() {
   )
 
   const externalSectionCount = useMemo(
-    () => sections.filter((s) => requiresAssignmentRequest(s)).length,
-    [sections],
+    () => filteredSections.filter((s) => requiresAssignmentRequest(s)).length,
+    [filteredSections],
   )
 
   const bulkRequestEligibleCount = useMemo(
-    () => sections.filter((s) => canSendAssignmentRequest(s)).length,
-    [sections],
+    () => filteredSections.filter((s) => canSendAssignmentRequest(s)).length,
+    [filteredSections],
   )
 
   const semesterOptions = useMemo(
@@ -101,7 +121,23 @@ function LecturerAssignment() {
     getLecturers()
       .then((res) => setLecturers(res.data || []))
       .catch(() => {})
+    getCohorts()
+      .then((result) => {
+        setCohortOptions(
+          (result.data || [])
+            .map((cohort) => ({
+              value: cohort.cohort_id,
+              label: formatCohortLabel(cohort),
+            }))
+            .sort((a, b) => b.value.localeCompare(a.value, 'vi')),
+        )
+      })
+      .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    setCohortFilterState(loadCohortFilter())
+  }, [location.pathname])
 
   const fetchSections = useCallback(async (semesterId) => {
     if (!semesterId) {
@@ -125,20 +161,20 @@ function LecturerAssignment() {
 
   useEffect(() => {
     fetchSections(effectiveSemester)
-  }, [effectiveSemester, fetchSections])
+  }, [effectiveSemester, fetchSections, location.pathname])
 
   const assignmentStats = useMemo(() => {
-    const totalSections = sections.length
-    const assignedSections = sections.filter((section) => section.lecturer_id).length
+    const totalSections = filteredSections.length
+    const assignedSections = filteredSections.filter((section) => section.lecturer_id).length
     const unassignedSections = totalSections - assignedSections
     const completionRate = totalSections
       ? Math.round((assignedSections / totalSections) * 100)
       : 0
-    const totalCredits = sections.reduce(
+    const totalCredits = filteredSections.reduce(
       (sum, section) => sum + getSectionTeachingWeight(section),
       0,
     )
-    const assignedCredits = sections
+    const assignedCredits = filteredSections
       .filter((section) => section.lecturer_id)
       .reduce((sum, section) => sum + getSectionTeachingWeight(section), 0)
 
@@ -156,7 +192,7 @@ function LecturerAssignment() {
     ].filter((item) => item.value > 0)
 
     const lecturerLoadMap = new Map()
-    for (const section of sections) {
+    for (const section of filteredSections) {
       if (!section.lecturer_id) continue
 
       const lecturerName =
@@ -195,7 +231,7 @@ function LecturerAssignment() {
       statusChartData,
       lecturerLoadChartData,
     }
-  }, [sections, lecturers])
+  }, [filteredSections, lecturers])
 
   const handleLecturerChange = async (sectionId, lecturerId) => {
     setUpdatingSectionId(sectionId)
@@ -286,13 +322,13 @@ function LecturerAssignment() {
       title: 'Mã lớp HP',
       dataIndex: 'section_id',
       key: 'section_id',
-      ellipsis: true,
+      minWidth: 280,
       render: (value) => <strong>{value}</strong>,
     },
     {
       title: 'Tên học phần',
       key: 'course_name',
-      ellipsis: true,
+      minWidth: 220,
       render: (_, record) => (
         <span>
           {record.course?.course_name || record.course_id}
@@ -314,8 +350,7 @@ function LecturerAssignment() {
           {
             title: 'Khoa quản lý HP',
             key: 'managing_unit',
-            width: 160,
-            ellipsis: true,
+            minWidth: 160,
             render: (_, record) =>
               record.assignment_meta?.course_managing_unit_name ||
               record.course?.unit?.unit_name ||
@@ -420,6 +455,16 @@ function LecturerAssignment() {
                 value={effectiveSemester}
                 onChange={setSelectedSemester}
                 allowClear
+              />
+              <Select
+                allowClear
+                mode="multiple"
+                placeholder="Lọc niên khóa"
+                style={{ minWidth: 220 }}
+                options={cohortOptions}
+                value={cohortFilter}
+                onChange={setCohortFilter}
+                maxTagCount="responsive"
               />
               <Button
                 type="primary"
@@ -544,11 +589,19 @@ function LecturerAssignment() {
 
         <Spin spinning={loading || autoAssigning}>
           <Table
+            className={TABLE_SCROLL_CLASS}
             rowKey="section_id"
             columns={columns}
-            dataSource={sections}
-            pagination={{ pageSize: 12, showSizeChanger: true, showTotal: (total) => `${total} lớp học phần` }}
-            scroll={getTableScroll(960)}
+            dataSource={filteredSections}
+            pagination={{
+              pageSize: 12,
+              showSizeChanger: true,
+              showTotal: (total) =>
+                cohortFilter.length
+                  ? `${total} lớp (${cohortFilter.join(', ')})`
+                  : `${total} lớp học phần`,
+            }}
+            scroll={getTableScroll(1280)}
             sticky
             locale={{
               emptyText: effectiveSemester

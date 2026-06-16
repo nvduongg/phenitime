@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Form, Input, InputNumber, Select, Tag } from 'antd'
+import { Form, Input, InputNumber, Select, Tag, Tooltip } from 'antd'
 import ExcelImportModal from '../../components/Common/ExcelImportModal'
 import ImportToolbarActions from '../../components/Common/ImportToolbarActions'
 import MasterDataCrudPage from '../../components/Common/MasterDataCrudPage'
@@ -109,33 +109,40 @@ function Lecturers() {
       {
         title: 'Chuyên môn giảng dạy',
         key: 'specialties',
-        width: 360,
-        ellipsis: true,
+        width: 320,
         render: (_, record) => {
           const specialties = record.specialties || []
           if (specialties.length === 0) return '—'
 
           return (
-            <>
+            <span className="section-group-tags">
               {specialties.slice(0, 3).map((item) => (
-                <Tag key={item.course_id} color="blue" style={{ marginBottom: 4 }}>
+                <Tag key={item.course_id} color="blue" className="section-group-tag">
                   {item.course_id}
                 </Tag>
               ))}
               {specialties.length > 3 ? (
-                <Tag style={{ marginBottom: 4 }}>+{specialties.length - 3} môn</Tag>
+                <Tag className="section-group-tag">+{specialties.length - 3} môn</Tag>
               ) : null}
-            </>
+            </span>
           )
         },
       },
       {
         title: 'Khoa',
         key: 'unit_name',
+        width: 240,
         ellipsis: true,
         render: (_, record) => {
           const unitName = record.unit?.unit_name
-          return unitName ? <Tag color="purple">{unitName}</Tag> : '—'
+          if (!unitName) return '—'
+          return (
+            <Tooltip title={unitName}>
+              <Tag color="purple" className="section-group-tag">
+                {unitName}
+              </Tag>
+            </Tooltip>
+          )
         },
       },
       {
@@ -171,7 +178,7 @@ function Lecturers() {
       modalTitleCreate="Thêm giảng viên mới"
       modalTitleEdit="Cập nhật giảng viên"
       form={crud.form}
-      scrollX={1100}
+      scrollX={1280}
       extraActions={
         <ImportToolbarActions onImportClick={() => setImportOpen(true)} />
       }

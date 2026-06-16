@@ -18,8 +18,6 @@ exports.getSchedulingSettings = async (_req, res) => {
 exports.updateSchedulingSettings = async (req, res) => {
     try {
         const {
-            default_lt_capacity,
-            default_th_capacity,
             shift_duration,
             allowed_start_periods,
             allowed_days,
@@ -27,8 +25,6 @@ exports.updateSchedulingSettings = async (req, res) => {
         } = req.body;
 
         const config = await updateSchedulingConfig(prisma, {
-            default_lt_capacity,
-            default_th_capacity,
             shift_duration,
             allowed_start_periods,
             allowed_days,

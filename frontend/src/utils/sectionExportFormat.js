@@ -15,7 +15,8 @@ export function parseSectionIdParts(sectionId) {
 
 /**
  * Map internal group codes to TKB export convention.
- * ELN01 → N01.ELN0 (matches real files: …-25(N01.ELN0))
+ * ELN01 → N01.ELN0 trong cột Lớp học phần (theo file thực tế trường).
+ * Cột Hình thức học: ELN (LMS) hoặc COUR (Coursera), không dùng ELN0.
  * COUR01 / COUR01.TH1 / N01 / N01.TH1 → giữ nguyên
  */
 export function formatGroupCodeForExport(groupCode) {

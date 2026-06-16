@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { SaveOutlined, SettingOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Form, InputNumber, Select, Spin, message } from 'antd'
+import { Alert, Button, Card, Checkbox, Form, InputNumber, Select, Spin, message } from 'antd'
 import PageHeader from '../../components/Common/PageHeader'
 import { getSchedulingSettings, updateSchedulingSettings } from '../../services/api'
 
@@ -29,9 +29,6 @@ function SystemSettings() {
       const result = await getSchedulingSettings()
       const config = result.data || {}
       form.setFieldsValue({
-        default_lt_capacity: config.default_lt_capacity,
-        default_th_capacity: config.default_th_capacity,
-        default_eln_capacity: config.default_eln_capacity,
         shift_duration: config.shift_duration,
         allowed_start_periods: config.allowed_start_periods,
         allowed_days: config.allowed_days,
@@ -66,7 +63,7 @@ function SystemSettings() {
     <Spin spinning={loading}>
       <PageHeader
         title="Cấu hình hệ thống"
-        subtitle="Thiết lập tham số sinh lớp tự động và ràng buộc xếp lịch AI — không cần sửa mã nguồn."
+        subtitle="Thiết lập ràng buộc xếp lịch AI (ca học, ngày, tiết) — áp dụng toàn hệ thống."
         actions={
           <Button
             type="primary"
@@ -83,48 +80,14 @@ function SystemSettings() {
         type="info"
         showIcon
         icon={<SettingOutlined />}
-        message="Cấu hình áp dụng toàn hệ thống"
-        description="Các giá trị mặc định (LT 80 / TH 40 / ONLINE 800 / 3 tiết-ca) dùng khi chưa lưu cấu hình. Lớp trực tuyến ghép nhiều nhóm SV vào tối thiểu số lớp; chỉ tách khi vượt sĩ số tối đa ONLINE."
+        message="Cấu hình xếp lịch"
+        description="Ca học, ngày và tiết bắt đầu dùng cho thuật toán CP-SAT. Trần ghép lớp LT/TH/ONLINE được đặt khi sinh lớp học phần."
         style={{ marginBottom: 16 }}
       />
 
-      <Card title="Tham số xếp lịch & sinh lớp" className="settings-card">
+      <Card title="Tham số xếp lịch" className="settings-card">
         <Form form={form} layout="vertical" requiredMark="optional">
-          <div className="settings-form-grid">
-            <Form.Item
-              name="default_lt_capacity"
-              label="Sĩ số chuẩn Lý thuyết (LT)"
-              rules={[
-                { required: true, message: 'Vui lòng nhập sĩ số LT' },
-                { type: 'number', min: 1, message: 'Sĩ số phải lớn hơn 0' },
-              ]}
-            >
-              <InputNumber min={1} max={500} style={{ width: '100%' }} />
-            </Form.Item>
-
-            <Form.Item
-              name="default_th_capacity"
-              label="Sĩ số chuẩn Thực hành (TH/PM)"
-              rules={[
-                { required: true, message: 'Vui lòng nhập sĩ số TH' },
-                { type: 'number', min: 1, message: 'Sĩ số phải lớn hơn 0' },
-              ]}
-            >
-              <InputNumber min={1} max={500} style={{ width: '100%' }} />
-            </Form.Item>
-
-            <Form.Item
-              name="default_eln_capacity"
-              label="Sĩ số tối đa / lớp E-Learning (ONLINE)"
-              tooltip="Cố ghép mọi nhóm sinh viên vào ít lớp ONLINE nhất. Chỉ tách thêm lớp khi tổng sĩ số vượt ngưỡng này (VD: môn đại cương toàn trường có thể nhiều lớp 800)."
-              rules={[
-                { required: true, message: 'Vui lòng nhập sĩ số tối đa ONLINE' },
-                { type: 'number', min: 1, message: 'Sĩ số phải lớn hơn 0' },
-              ]}
-            >
-              <InputNumber min={1} max={9999} style={{ width: '100%' }} />
-            </Form.Item>
-
+          <div className="ai-settings-row-pair ai-settings-row-pair--page">
             <Form.Item
               name="shift_duration"
               label="Thời lượng 1 ca học (Số tiết)"
@@ -136,6 +99,17 @@ function SystemSettings() {
             >
               <InputNumber min={1} max={6} style={{ width: '100%' }} />
             </Form.Item>
+            <Form.Item
+              name="evening_start_periods"
+              label="Tiết ca tối / E-learning"
+              rules={[{ required: true, message: 'Vui lòng chọn tiết ca tối' }]}
+              getValueProps={(value) => ({
+                value: Array.isArray(value) && value.length ? value[0] : (value ?? null),
+              })}
+              normalize={(value) => (value == null || value === '' ? [] : [Number(value)])}
+            >
+              <Select options={PERIOD_OPTIONS} placeholder="Chọn tiết" style={{ width: '100%' }} />
+            </Form.Item>
           </div>
 
           <Form.Item
@@ -144,11 +118,9 @@ function SystemSettings() {
             rules={[{ required: true, message: 'Vui lòng chọn ít nhất một tiết' }]}
             tooltip="Các mốc tiết được phép bắt đầu ca (VD: 1, 4, 7, 10, 13 cho ca 3 tiết)."
           >
-            <Select
-              mode="multiple"
-              allowClear
+            <Checkbox.Group
               options={PERIOD_OPTIONS}
-              placeholder="Chọn tiết bắt đầu ca học"
+              className="ai-checkbox-grid ai-checkbox-grid--periods"
             />
           </Form.Item>
 
@@ -158,26 +130,12 @@ function SystemSettings() {
             rules={[{ required: true, message: 'Vui lòng chọn ít nhất một ngày' }]}
             tooltip="Thứ trong tuần được phép xếp lịch (2 = Thứ 2 … 7 = Thứ 7)."
           >
-            <Select
-              mode="multiple"
-              allowClear
+            <Checkbox.Group
               options={DAY_OPTIONS}
-              placeholder="Chọn ngày học"
+              className="ai-checkbox-grid ai-checkbox-grid--days"
             />
           </Form.Item>
 
-          <Form.Item
-            name="evening_start_periods"
-            label="Tiết bắt đầu ca tối / E-learning"
-            rules={[{ required: true, message: 'Vui lòng chọn ít nhất một tiết' }]}
-          >
-            <Select
-              mode="multiple"
-              allowClear
-              options={PERIOD_OPTIONS}
-              placeholder="Chọn tiết ca tối"
-            />
-          </Form.Item>
         </Form>
       </Card>
     </Spin>

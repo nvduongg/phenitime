@@ -40,6 +40,26 @@ function shouldSkipSchedulingSection(section) {
     return !requiresSchedulingForSection(section);
 }
 
+function normalizeCohortIds(value) {
+    if (!value) {
+        return [];
+    }
+    const list = Array.isArray(value) ? value : [value];
+    return [...new Set(list.map((id) => String(id).trim()).filter(Boolean))];
+}
+
+function filterSectionsByCohortIds(sections, cohortIds) {
+    if (!cohortIds?.length) {
+        return sections;
+    }
+
+    return sections.filter((section) =>
+        (section.student_groups || []).some((group) =>
+            cohortIds.includes(String(group.curriculum?.cohort_id || '')),
+        ),
+    );
+}
+
 function buildSchedulerEvents(
     sections,
     shiftDuration = DEFAULT_SCHEDULING_CONFIG.shift_duration,
@@ -146,11 +166,12 @@ async function getSolverPreflight(prisma, semesterId) {
     };
 }
 
-async function buildSolvePayload(prisma, semesterId, config = {}) {
+async function buildSolvePayload(prisma, semesterId, config = {}, options = {}) {
     const mergedConfig = {
         ...DEFAULT_SCHEDULING_CONFIG,
         ...config,
     };
+    const cohortIds = normalizeCohortIds(options.cohort_ids);
     const shiftDuration = Number(mergedConfig.shift_duration) || DEFAULT_SCHEDULING_CONFIG.shift_duration;
     const preflight = await getSolverPreflight(prisma, semesterId);
 
@@ -164,14 +185,25 @@ async function buildSolvePayload(prisma, semesterId, config = {}) {
         throw new Error('Room master data is empty. Add rooms before running the AI scheduler.');
     }
 
-    const sections = await prisma.courseSection.findMany({
+    const allSections = await prisma.courseSection.findMany({
         where: { semester_id: semesterId },
         include: {
             course: true,
-            student_groups: true,
+            student_groups: {
+                include: { curriculum: true },
+            },
         },
         orderBy: { section_id: 'asc' },
     });
+
+    const sections = filterSectionsByCohortIds(allSections, cohortIds);
+
+    if (sections.length === 0) {
+        const cohortLabel = cohortIds.length > 0 ? cohortIds.join(', ') : 'selected cohorts';
+        throw new Error(
+            `No course sections found for semester '${semesterId}' and cohort(s) ${cohortLabel}.`,
+        );
+    }
 
     const events = buildSchedulerEvents(sections, shiftDuration, mergedConfig);
 
@@ -195,6 +227,8 @@ async function buildSolvePayload(prisma, semesterId, config = {}) {
 
     return {
         semester_id: semesterId,
+        cohort_ids: cohortIds,
+        scoped_section_ids: sections.map((section) => section.section_id),
         config: {
             shift_duration: shiftDuration,
             max_lecturer_shifts_per_day:
@@ -221,4 +255,6 @@ module.exports = {
     buildSolvePayload,
     buildSchedulerEvents,
     getSolverPreflight,
+    normalizeCohortIds,
+    filterSectionsByCohortIds,
 };

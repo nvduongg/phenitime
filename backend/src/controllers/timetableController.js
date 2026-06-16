@@ -87,7 +87,7 @@ exports.deleteTimetable = async (req, res) => {
 
 exports.triggerAiScheduler = async (req, res) => {
     try {
-        const { semester_id, config: requestConfig = {} } = req.body;
+        const { semester_id, config: requestConfig = {}, cohort_ids = [] } = req.body;
 
         if (!semester_id) {
             return res.status(400).json({
@@ -98,10 +98,13 @@ exports.triggerAiScheduler = async (req, res) => {
 
         const dbConfig = await getSchedulingConfig(prisma);
         const config = buildSolverConfig(dbConfig, requestConfig);
+        const normalizedCohortIds = Array.isArray(cohort_ids)
+            ? [...new Set(cohort_ids.map((id) => String(id).trim()).filter(Boolean))]
+            : [];
 
         const job = await schedulerQueue.add(
             JOB_NAME,
-            { semester_id, config },
+            { semester_id, config, cohort_ids: normalizedCohortIds },
             {
                 removeOnComplete: 100,
                 removeOnFail: 50,

@@ -3,8 +3,12 @@ const SCHEDULING_CONFIG_KEY = 'scheduling';
 const DEFAULT_SCHEDULING_CONFIG = {
     default_lt_capacity: 80,
     default_th_capacity: 40,
+    /** Sĩ số mặc định / nhóm SV khi chưa khai báo student_count (sinh lớp tự động). */
+    default_student_count: 100,
     /** Max SV / lớp ONLINE trước khi tách thêm ELN02… (ghép tối đa vào 1 lớp nếu tổng ≤ giá trị này). */
     default_eln_capacity: 800,
+    /** Max SV / track Coursera (COUR01) trước khi tách COUR02… — khớp TKB thực (~200–280). */
+    default_cour_capacity: 240,
     shift_duration: 3,
     max_teaching_weeks: 10,
     stretch_to_full_semester: true,
@@ -30,7 +34,9 @@ function normalizeIntegerArray(value, fallback) {
 function normalizeSchedulingConfig(raw = {}) {
     const ltCapacity = Number(raw.default_lt_capacity);
     const thCapacity = Number(raw.default_th_capacity);
+    const defaultStudentCount = Number(raw.default_student_count);
     const elnCapacity = Number(raw.default_eln_capacity);
+    const courCapacity = Number(raw.default_cour_capacity);
     const shiftDuration = Number(raw.shift_duration);
     const maxLecturerShiftsPerDay = Number(raw.max_lecturer_shifts_per_day);
     const maxTeachingWeeks = Number(raw.max_teaching_weeks);
@@ -38,7 +44,11 @@ function normalizeSchedulingConfig(raw = {}) {
     return {
         default_lt_capacity: ltCapacity > 0 ? ltCapacity : DEFAULT_SCHEDULING_CONFIG.default_lt_capacity,
         default_th_capacity: thCapacity > 0 ? thCapacity : DEFAULT_SCHEDULING_CONFIG.default_th_capacity,
+        default_student_count: defaultStudentCount > 0
+            ? defaultStudentCount
+            : DEFAULT_SCHEDULING_CONFIG.default_student_count,
         default_eln_capacity: elnCapacity > 0 ? elnCapacity : DEFAULT_SCHEDULING_CONFIG.default_eln_capacity,
+        default_cour_capacity: courCapacity > 0 ? courCapacity : DEFAULT_SCHEDULING_CONFIG.default_cour_capacity,
         shift_duration: shiftDuration > 0 ? shiftDuration : DEFAULT_SCHEDULING_CONFIG.shift_duration,
         max_teaching_weeks:
             maxTeachingWeeks > 0 ? maxTeachingWeeks : DEFAULT_SCHEDULING_CONFIG.max_teaching_weeks,
@@ -117,6 +127,7 @@ function buildSolverConfig(dbConfig, requestConfig = {}) {
         default_lt_capacity: merged.default_lt_capacity,
         default_th_capacity: merged.default_th_capacity,
         default_eln_capacity: merged.default_eln_capacity,
+        default_cour_capacity: merged.default_cour_capacity,
         shift_duration: merged.shift_duration,
         max_teaching_weeks: merged.max_teaching_weeks,
         stretch_to_full_semester: merged.stretch_to_full_semester,

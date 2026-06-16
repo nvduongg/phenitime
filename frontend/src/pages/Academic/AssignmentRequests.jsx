@@ -13,7 +13,7 @@ import {
 } from 'antd'
 import PageHeader from '../../components/Common/PageHeader'
 import { useAppContext } from '../../contexts/AppContext'
-import { getTableScroll } from '../../config/table'
+import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
 import {
   cancelAssignmentRequest,
   fulfillAssignmentRequest,
@@ -281,12 +281,14 @@ export default function AssignmentRequests() {
       />
 
       <Table
+        className={TABLE_SCROLL_CLASS}
         rowKey="request_id"
         loading={loading}
         columns={box === 'incoming' ? incomingColumns : outgoingColumns}
         dataSource={rows}
         pagination={{ pageSize: 10 }}
-        scroll={getTableScroll(1100)}
+        scroll={getTableScroll(1280)}
+        sticky
       />
 
       <Modal

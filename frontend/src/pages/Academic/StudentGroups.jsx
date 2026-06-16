@@ -221,7 +221,7 @@ function StudentGroups() {
         modalTitleCreate="Thêm lớp sinh viên mới"
         modalTitleEdit="Cập nhật lớp sinh viên"
         form={crud.form}
-        scrollX={760}
+        scrollX={1000}
         extraActions={
           <ImportToolbarActions onImportClick={() => setImportOpen(true)} />
         }

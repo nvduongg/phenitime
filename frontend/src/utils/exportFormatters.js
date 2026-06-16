@@ -105,18 +105,23 @@ export const formatCohortIdsForExport = (studentGroups = []) => {
   return ids.sort((a, b) => String(b).localeCompare(String(a), 'vi')).join('; ')
 }
 
-/** Sĩ số dự kiến = tổng student_count các nhóm KS (phản ánh lớp ONLINE ghép nhiều nhóm). */
-export const resolveExpectedEnrollment = (section) => {
-  const groups = section?.student_groups || []
-  if (!groups.length) {
-    return section?.capacity ?? ''
-  }
+export const resolveSectionCohortIds = (section) => [
+  ...new Set(
+    (section?.student_groups || [])
+      .map((group) => group.curriculum?.cohort_id || group.curriculum?.cohort?.cohort_id)
+      .filter(Boolean),
+  ),
+]
 
-  const total = groups.reduce(
-    (sum, group) => sum + (Number(group.student_count) || 0),
-    0,
-  )
-  return total > 0 ? total : section?.capacity ?? ''
+export const sectionMatchesCohortFilter = (section, cohortFilter = []) => {
+  if (!cohortFilter?.length) {
+    return true
+  }
+  const cohortIds = resolveSectionCohortIds(section)
+  if (!cohortIds.length) {
+    return false
+  }
+  return cohortIds.some((id) => cohortFilter.includes(id))
 }
 
 import {
@@ -139,6 +144,47 @@ import {
   isAsyncOnlineExportSection,
   resolveExportGroupSortKey,
 } from './sectionExportFormat'
+
+/** Cột Nhóm KS khi xuất Excel: ELN/COUR async để trống (giống TKB thực); TH/LT giữ tên nhóm. */
+export const formatStudentGroupNamesForExport = (section) => {
+  if (!section) return ''
+  if (isAsyncOnlineExportSection(section)) {
+    return ''
+  }
+  return formatStudentGroupNames(section.student_groups || [])
+}
+
+/** Sĩ số dự kiến: trần ghép lớp (LT/TH) hoặc tổng thực tế (ONLINE/COUR async). */
+export const resolveExpectedEnrollment = (section) => {
+  if (!section) return ''
+
+  if (isAsyncOnlineExportSection(section)) {
+    const groups = section?.student_groups || []
+    if (groups.length) {
+      const total = groups.reduce(
+        (sum, group) => sum + (Number(group.student_count) || 0),
+        0,
+      )
+      if (total > 0) return total
+    }
+  }
+
+  const storedCapacity = Number(section.capacity)
+  if (Number.isFinite(storedCapacity) && storedCapacity > 0) {
+    return storedCapacity
+  }
+
+  const groups = section?.student_groups || []
+  if (!groups.length) {
+    return ''
+  }
+
+  const total = groups.reduce(
+    (sum, group) => sum + (Number(group.student_count) || 0),
+    0,
+  )
+  return total > 0 ? total : ''
+}
 
 function resolveRhythmPlanForSection(section) {
   return resolveSchedulePlanForSection(section)

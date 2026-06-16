@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import dayjs from 'dayjs'
 import {
   AppstoreOutlined,
@@ -31,9 +32,9 @@ import TimetableGrid from '../../components/Timetable/TimetableGrid'
 import UnscheduledDragPanel from '../../components/Timetable/UnscheduledDragPanel'
 import TimetableDropConfirmModal from '../../components/Timetable/TimetableDropConfirmModal'
 import { useAppContext } from '../../contexts/AppContext'
-import { getTableScroll } from '../../config/table'
+import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
 import { buildTimetableExportColumns } from '../../config/exportColumns'
-import { prepareTimetablesForExport } from '../../utils/exportFormatters'
+import { prepareTimetablesForExport, sectionMatchesCohortFilter } from '../../utils/exportFormatters'
 import {
   buildFilterOptions,
   filterGridEvents,
@@ -52,6 +53,7 @@ import {
 import {
   createTimetable,
   deleteTimetable,
+  getCohorts,
   getCourseSections,
   getRooms,
   getTimetables,
@@ -62,10 +64,12 @@ import {
   DAY_TAG_COLORS,
   buildExportFilename,
   exportToExcel,
+  formatCohortLabel,
   formatDate,
   formatDayOfWeek,
   formatTimetableRoom,
 } from '../../utils/formatters'
+import { loadCohortFilter, saveCohortFilter } from '../../utils/cohortFilterStorage'
 
 const DAY_OPTIONS = Object.entries(DAY_LABELS).map(([value, label]) => ({
   value: Number(value),
@@ -73,10 +77,13 @@ const DAY_OPTIONS = Object.entries(DAY_LABELS).map(([value, label]) => ({
 }))
 
 function Timetables() {
+  const location = useLocation()
   const { semesters, activeSemesterId } = useAppContext()
   const [timetables, setTimetables] = useState([])
   const [sections, setSections] = useState([])
   const [rooms, setRooms] = useState([])
+  const [cohortOptions, setCohortOptions] = useState([])
+  const [cohortFilter, setCohortFilterState] = useState(() => loadCohortFilter())
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -100,6 +107,14 @@ function Timetables() {
 
   const effectiveSemesterFilter =
     semesterFilter !== undefined ? semesterFilter : activeSemesterId
+
+  const setCohortFilter = useCallback((value) => {
+    setCohortFilterState((prev) => {
+      const next = typeof value === 'function' ? value(prev) : value
+      saveCohortFilter(next)
+      return next
+    })
+  }, [])
 
   const sortTimetableRows = useCallback(
     (rows) =>
@@ -133,7 +148,26 @@ function Timetables() {
 
   useEffect(() => {
     fetchTimetables()
-  }, [fetchTimetables])
+  }, [fetchTimetables, location.pathname])
+
+  useEffect(() => {
+    getCohorts()
+      .then((result) => {
+        setCohortOptions(
+          (result.data || [])
+            .map((cohort) => ({
+              value: cohort.cohort_id,
+              label: formatCohortLabel(cohort),
+            }))
+            .sort((a, b) => b.value.localeCompare(a.value, 'vi')),
+        )
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    setCohortFilterState(loadCohortFilter())
+  }, [location.pathname])
 
   useEffect(() => {
     const stored = loadSchedulerResult()
@@ -151,11 +185,18 @@ function Timetables() {
       return
     }
 
-    setUnscheduledClasses(stored.unscheduled_classes)
+    setUnscheduledClasses(stored.unscheduled_classes.filter((item) => {
+      const activeCohorts = cohortFilter.length ? cohortFilter : stored.cohort_ids
+      if (!activeCohorts?.length) {
+        return true
+      }
+      const section = sections.find((row) => row.section_id === item.section_id)
+      return sectionMatchesCohortFilter(section, activeCohorts)
+    }))
     if (stored.unscheduled_classes.length > 0) {
       setViewMode((current) => (current === 'table' ? 'grid' : current))
     }
-  }, [effectiveSemesterFilter])
+  }, [effectiveSemesterFilter, cohortFilter, sections])
 
   useEffect(() => {
     Promise.all([getCourseSections(), getRooms()])
@@ -166,7 +207,7 @@ function Timetables() {
       .catch(() => {
         // Error handled by axios interceptor
       })
-  }, [])
+  }, [location.pathname])
 
   useEffect(() => {
     if (!modalOpen) return
@@ -186,13 +227,30 @@ function Timetables() {
     }
   }, [modalOpen, editingRecord, form])
 
+  const sectionLookup = useMemo(
+    () => new Map(sections.map((section) => [section.section_id, section])),
+    [sections],
+  )
+
+  const semesterSections = useMemo(
+    () =>
+      sections.filter(
+        (section) =>
+          (effectiveSemesterFilter
+            ? section.semester_id === effectiveSemesterFilter
+            : true)
+          && sectionMatchesCohortFilter(section, cohortFilter),
+      ),
+    [sections, effectiveSemesterFilter, cohortFilter],
+  )
+
   const sectionOptions = useMemo(
     () =>
-      sections.map((section) => ({
+      semesterSections.map((section) => ({
         value: section.section_id,
         label: section.section_id,
       })),
-    [sections],
+    [semesterSections],
   )
 
   const roomOptions = useMemo(
@@ -223,51 +281,58 @@ function Timetables() {
     return days.map((day) => ({ value: day, label: formatDayOfWeek(day) }))
   }, [timetables])
 
-  const filteredTimetables = useMemo(() => {
+  const semesterTimetables = useMemo(() => {
     return timetables.filter((item) => {
       const matchSemester = effectiveSemesterFilter
         ? item.section?.semester_id === effectiveSemesterFilter
         : true
+      if (!matchSemester) {
+        return false
+      }
+      if (!cohortFilter.length) {
+        return true
+      }
+      const section = item.section || sectionLookup.get(item.section_id)
+      return sectionMatchesCohortFilter(section, cohortFilter)
+    })
+  }, [timetables, effectiveSemesterFilter, cohortFilter, sectionLookup])
+
+  const filteredTimetables = useMemo(() => {
+    return semesterTimetables.filter((item) => {
       const matchRoom = roomFilter ? item.room_id === roomFilter : true
       const matchDay = dayFilter ? item.day_of_week === dayFilter : true
-      return matchSemester && matchRoom && matchDay
+      return matchRoom && matchDay
     })
-  }, [timetables, effectiveSemesterFilter, roomFilter, dayFilter])
-
-  const semesterTimetables = useMemo(() => {
-    return timetables.filter((item) =>
-      effectiveSemesterFilter ? item.section?.semester_id === effectiveSemesterFilter : true,
-    )
-  }, [timetables, effectiveSemesterFilter])
+  }, [semesterTimetables, roomFilter, dayFilter])
 
   const gridBaseEvents = useMemo(
     () => semesterTimetables.map(normalizeGridEvent),
     [semesterTimetables],
   )
 
-  const semesterSectionsForFilter = useMemo(
-    () =>
-      sections.filter((section) =>
-        effectiveSemesterFilter
-          ? section.semester_id === effectiveSemesterFilter
-          : true,
-      ),
-    [sections, effectiveSemesterFilter],
+  const gridFilterOptions = useMemo(
+    () => buildFilterOptions(gridBaseEvents, { extraSections: semesterSections }),
+    [gridBaseEvents, semesterSections],
   )
 
-  const gridFilterOptions = useMemo(
-    () => buildFilterOptions(gridBaseEvents, { extraSections: semesterSectionsForFilter }),
-    [gridBaseEvents, semesterSectionsForFilter],
-  )
+  const cohortUnscheduledClasses = useMemo(() => {
+    if (!cohortFilter.length) {
+      return unscheduledClasses
+    }
+    return unscheduledClasses.filter((item) => {
+      const section = sectionLookup.get(item.section_id)
+      return sectionMatchesCohortFilter(section, cohortFilter)
+    })
+  }, [unscheduledClasses, cohortFilter, sectionLookup])
 
   const filteredUnscheduledClasses = useMemo(() => {
-    if (!gridCourseFilter) return unscheduledClasses
-    return unscheduledClasses.filter((item) => {
-      const section = sections.find((row) => row.section_id === item.section_id)
+    if (!gridCourseFilter) return cohortUnscheduledClasses
+    return cohortUnscheduledClasses.filter((item) => {
+      const section = sectionLookup.get(item.section_id)
       const courseId = section?.course_id || section?.course?.course_id
       return courseId === gridCourseFilter
     })
-  }, [unscheduledClasses, gridCourseFilter, sections])
+  }, [cohortUnscheduledClasses, gridCourseFilter, sectionLookup])
 
   const filteredGridEvents = useMemo(() => {
     const filtered = filterGridEvents(gridBaseEvents, {
@@ -325,19 +390,6 @@ function Timetables() {
   const semesterLookup = useMemo(
     () => new Map(semesters.map((semester) => [semester.semester_id, semester])),
     [semesters],
-  )
-
-  const semesterSections = useMemo(
-    () => sections.filter((section) =>
-      effectiveSemesterFilter
-        ? section.semester_id === effectiveSemesterFilter
-        : true),
-    [sections, effectiveSemesterFilter],
-  )
-
-  const sectionLookup = useMemo(
-    () => new Map(sections.map((section) => [section.section_id, section])),
-    [sections],
   )
 
   const activeSemester = useMemo(
@@ -517,7 +569,11 @@ function Timetables() {
       filename,
       { sheetName: 'Thoi khoa bieu' },
     )
-    message.success('Xuất file Excel thành công')
+    message.success(
+      cohortFilter.length
+        ? `Đã xuất ${exportRows.length} buổi (${cohortFilter.join(', ')}) — ${filename}`
+        : 'Xuất file Excel thành công',
+    )
   }
 
   const openCreate = () => {
@@ -581,7 +637,7 @@ function Timetables() {
       title: 'Mã lớp HP',
       dataIndex: 'section_id',
       key: 'section_id',
-      ellipsis: true,
+      minWidth: 280,
       render: (value) => <span className="section-id-cell">{value}</span>,
     },
     {
@@ -680,6 +736,16 @@ function Timetables() {
                 options={semesterOptions}
                 value={effectiveSemesterFilter}
                 onChange={setSemesterFilter}
+              />
+              <Select
+                allowClear
+                mode="multiple"
+                placeholder="Lọc niên khóa"
+                style={{ minWidth: 240 }}
+                options={cohortOptions}
+                value={cohortFilter}
+                onChange={setCohortFilter}
+                maxTagCount="responsive"
               />
               {viewMode === 'table' ? (
                 <>
@@ -806,6 +872,7 @@ function Timetables() {
           </div>
         ) : (
           <Table
+            className={TABLE_SCROLL_CLASS}
             rowKey="schedule_id"
             columns={columns}
             dataSource={filteredTimetables}
@@ -814,7 +881,7 @@ function Timetables() {
               showSizeChanger: true,
               showTotal: (total) => `${total} buổi học`,
             }}
-            scroll={getTableScroll(1100)}
+            scroll={getTableScroll(1200)}
             sticky
           />
         )}

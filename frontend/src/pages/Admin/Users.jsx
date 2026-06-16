@@ -20,7 +20,7 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons'
 import { usePageMeta } from '../../contexts/PageMetaContext'
-import api from '../../services/api'
+import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
 import { ROLE_LABELS, ROLES, PROVISIONABLE_ROLES } from '../../constants/roles'
 import { formatUnitType } from '../../constants/unitTypes'
 
@@ -399,7 +399,16 @@ export default function Users() {
         </Button>
       </Space>
 
-      <Table rowKey="user_id" loading={loading} columns={columns} dataSource={users} pagination={{ pageSize: 15 }} />
+      <Table
+        className={TABLE_SCROLL_CLASS}
+        rowKey="user_id"
+        loading={loading}
+        columns={columns}
+        dataSource={users}
+        pagination={{ pageSize: 15 }}
+        scroll={getTableScroll(1100)}
+        sticky
+      />
 
       <Modal
         title="Sinh tài khoản nhanh theo danh mục đơn vị"

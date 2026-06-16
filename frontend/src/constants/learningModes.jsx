@@ -5,7 +5,7 @@ import { resolveSectionClassType } from '../utils/sectionClassType'
 export const LEARNING_MODES = {
   THEORY: ['LT'],
   PRACTICE: ['TH', 'PM', 'TN', 'SB', 'XT'],
-  ONLINE: ['ONLINE', 'ELN', 'ELN0', 'ELEARNING', 'COURSERA', 'ONLINE_ELEARNING', 'ONLINE_COURSERA'],
+  ONLINE: ['ONLINE', 'ELN', 'ELN0', 'COUR', 'ELEARNING', 'COURSERA', 'ONLINE_ELEARNING', 'ONLINE_COURSERA'],
   SPECIAL: ['DA', 'ĐA', 'KL', 'TT', 'DN', 'BV'],
 }
 

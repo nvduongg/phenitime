@@ -17,11 +17,11 @@ export function resolveScheduleRhythm(params, options = {}) {
   const settings = { ...DEFAULT_RHYTHM_OPTIONS, ...options }
   if (!params) return null
 
-  const blockSize = Math.max(Number(settings.shiftDuration) || 3, 1)
   const maxWeeks = Math.max(Number(settings.maxWeeks) || 10, 1)
   const numShifts = Math.floor(Number(params.numShifts) || 0)
 
-  const uniformPlan = {
+  /** Nhịp học suy từ tổng tiết (TC×15 hoặc TC×30) và ca 3 tiết — không ép mẫu 5+5 tuần. */
+  return {
     mode: RHYTHM_MODES.UNIFORM,
     totalPeriods: params.totalPeriods,
     stPerWeek: params.stPerWeek,
@@ -36,40 +36,6 @@ export function resolveScheduleRhythm(params, options = {}) {
     }],
     scheduleParams: { ...params },
   }
-
-  const canStretch = settings.stretchEnabled
-    && params.actualWeeks < maxWeeks
-    && numShifts >= settings.minShiftsForStretch
-
-  if (!canStretch) {
-    return uniformPlan
-  }
-
-  const phase1Periods = 5 * blockSize
-  const phase2Periods = 5 * 2 * blockSize
-  if (params.totalPeriods === phase1Periods + phase2Periods) {
-    const peakPeriodsPerWeek = blockSize * 2
-    return {
-      mode: RHYTHM_MODES.PHASE_5_5,
-      totalPeriods: params.totalPeriods,
-      stPerWeek: peakPeriodsPerWeek,
-      durationWeeks: maxWeeks,
-      maxWeeks,
-      uniformActualWeeks: params.actualWeeks,
-      phases: [
-        { weekFrom: 1, weekTo: 5, shiftsPerWeek: 1, periodsPerWeek: blockSize },
-        { weekFrom: 6, weekTo: maxWeeks, shiftsPerWeek: 2, periodsPerWeek: peakPeriodsPerWeek },
-      ],
-      scheduleParams: {
-        ...params,
-        actualWeeks: maxWeeks,
-        stPerWeek: peakPeriodsPerWeek,
-        numShifts: 3,
-      },
-    }
-  }
-
-  return uniformPlan
 }
 
 export function buildSchedulingEventsFromPlan(plan, shiftDuration = 3) {

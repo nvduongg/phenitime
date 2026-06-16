@@ -35,10 +35,14 @@ function resolveSectionClassType(section) {
         return 'TH';
     }
 
-    if (isCourseraBaseGroupCode(groupCode) || (
+    if (isCourseraBaseGroupCode(groupCode)) {
+        return 'COUR';
+    }
+
+    if (
         isOnlineSectionGroupCode(groupCode)
         && normalizeLearningType(section.room_type_req) === 'ONLINE'
-    )) {
+    ) {
         return resolveOnlineExportClassType(stored);
     }
 

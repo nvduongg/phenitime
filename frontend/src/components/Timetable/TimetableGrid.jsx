@@ -100,7 +100,8 @@ function TimetableGrid({
           Kéo buổi từ danh sách bên trái và thả vào ô Thứ × Ca (trống hoặc có lịch)
         </div>
       ) : null}
-      <div className="timetable-grid">
+      <div className="timetable-grid-scroll">
+        <div className="timetable-grid">
         <div className="timetable-grid__head timetable-grid__head--corner">Ca / Thứ</div>
         {TIMETABLE_DAYS.map((day) => (
           <div key={day} className="timetable-grid__head">
@@ -148,6 +149,7 @@ function TimetableGrid({
             })}
           </Fragment>
         ))}
+      </div>
       </div>
     </Card>
   )

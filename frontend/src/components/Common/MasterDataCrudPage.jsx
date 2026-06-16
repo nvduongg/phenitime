@@ -11,7 +11,7 @@ import {
   Tooltip,
 } from 'antd'
 import PageHeader from './PageHeader'
-import { getTableScroll } from '../../config/table'
+import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
 
 function CrudActions({ record, onEdit, onDelete, renderRowActions }) {
   return (
@@ -57,7 +57,7 @@ function MasterDataCrudPage({
   modalTitleEdit,
   form,
   formContent,
-  scrollX = 900,
+  scrollX = 1100,
   extraActions,
   extraFilters,
   renderRowActions,
@@ -107,6 +107,7 @@ function MasterDataCrudPage({
 
       <Spin spinning={loading}>
         <Table
+          className={TABLE_SCROLL_CLASS}
           rowKey={rowKey}
           columns={[...columns, actionColumn]}
           dataSource={dataSource}

@@ -8,10 +8,12 @@ const sanitizeFilenamePart = (value) =>
     .replace(/^_|_$/g, '')
 
 export const buildExportFilename = (prefix, { semesterId, suffix } = {}) => {
-  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const now = new Date()
+  const dateStamp = now.toISOString().slice(0, 10).replace(/-/g, '')
+  const timeStamp = now.toTimeString().slice(0, 8).replace(/:/g, '')
   const semesterPart = semesterId ? sanitizeFilenamePart(semesterId) : 'Tat-ca'
   const suffixPart = suffix ? `-${sanitizeFilenamePart(suffix)}` : ''
-  return `${prefix}-${semesterPart}${suffixPart}-${dateStamp}.xlsx`
+  return `${prefix}-${semesterPart}${suffixPart}-${dateStamp}-${timeStamp}.xlsx`
 }
 
 const getCellValue = (row, col, rowIndex) => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   CalendarOutlined,
   CheckCircleFilled,
@@ -13,12 +13,12 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
+  Collapse,
   Form,
   InputNumber,
-  Progress,
   Select,
   Spin,
-  Steps,
   Table,
   Tag,
   message,
@@ -28,12 +28,17 @@ import { saveSchedulerResult } from '../../utils/timetableGrid'
 import { useAppContext } from '../../contexts/AppContext'
 import {
   getCourseSections,
+  getCohorts,
   getRooms,
   getSchedulerJobStatus,
   getSchedulingSettings,
   triggerAiScheduler,
   updateSchedulingSettings,
 } from '../../services/api'
+import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
+import { sectionMatchesCohortFilter } from '../../utils/exportFormatters'
+import { loadCohortFilter, saveCohortFilter } from '../../utils/cohortFilterStorage'
+import { formatCohortLabel } from '../../utils/formatters'
 
 const POLL_INTERVAL_MS = 3000
 const MAX_POLL_DURATION_MS = 65 * 60 * 1000
@@ -54,41 +59,45 @@ const DAY_OPTIONS = [
 ]
 
 const DEFAULT_SCHEDULING = {
-  default_lt_capacity: 80,
-  default_th_capacity: 40,
-  default_eln_capacity: 800,
   shift_duration: 3,
   allowed_start_periods: [1, 4, 7, 10, 13],
   allowed_days: [2, 3, 4, 5, 6, 7],
   evening_start_periods: [13],
 }
 
-const WORKFLOW_STEPS = [
-  {
-    key: 'sections',
-    title: 'Sinh lớp học phần',
-    path: '/course-sections',
-  },
-  {
-    key: 'lecturers',
-    title: 'Phân công giảng viên',
-    path: '/academic/lecturer-assignment',
-  },
-  {
-    key: 'solver',
-    title: 'Chạy thuật toán AI',
-    path: '/ai-scheduler',
-  },
-  {
-    key: 'timetables',
-    title: 'Xem thời khóa biểu',
-    path: '/timetables',
-  },
-]
+function ReadinessChecklist({ checks, successResult }) {
+  return (
+    <div className="ai-readiness-grid">
+      {checks.map((check) => {
+        const isOk = successResult || check.ok
+        return (
+          <div
+            key={check.key}
+            className={`ai-readiness-item ${isOk ? 'is-ok' : 'is-pending'}`}
+          >
+            <span className="ai-readiness-icon">
+              {isOk ? <CheckCircleFilled /> : <CloseCircleFilled />}
+            </span>
+            <div className="ai-readiness-copy">
+              <div className="ai-readiness-label">{check.label}</div>
+              <div className="ai-readiness-detail">{check.detail}</div>
+            </div>
+            {!isOk && check.link ? (
+              <Link to={check.link} className="ai-readiness-link">
+                Xử lý →
+              </Link>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 function AiScheduler() {
   const [form] = Form.useForm()
   const navigate = useNavigate()
+  const location = useLocation()
   const { semesters, activeSemesterId } = useAppContext()
   const [running, setRunning] = useState(false)
   const [jobState, setJobState] = useState(null)
@@ -96,6 +105,8 @@ function AiScheduler() {
   const [loadingReadiness, setLoadingReadiness] = useState(true)
   const [sections, setSections] = useState([])
   const [roomCount, setRoomCount] = useState(0)
+  const [cohortOptions, setCohortOptions] = useState([])
+  const [cohortFilter, setCohortFilterState] = useState(() => loadCohortFilter())
   const [savingSettings, setSavingSettings] = useState(false)
   const [pollElapsedSec, setPollElapsedSec] = useState(0)
   const pollTimerRef = useRef(null)
@@ -103,6 +114,33 @@ function AiScheduler() {
   const pollErrorCountRef = useRef(0)
 
   const selectedSemesterId = Form.useWatch('semester_id', form)
+
+  const setCohortFilter = useCallback((value) => {
+    setCohortFilterState((prev) => {
+      const next = typeof value === 'function' ? value(prev) : value
+      saveCohortFilter(next)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    getCohorts()
+      .then((result) => {
+        setCohortOptions(
+          (result.data || [])
+            .map((cohort) => ({
+              value: cohort.cohort_id,
+              label: formatCohortLabel(cohort),
+            }))
+            .sort((a, b) => b.value.localeCompare(a.value, 'vi')),
+        )
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    setCohortFilterState(loadCohortFilter())
+  }, [location.pathname])
 
   useEffect(() => {
     if (activeSemesterId) {
@@ -135,25 +173,8 @@ function AiScheduler() {
   }, [])
 
   useEffect(() => {
-    let cancelled = false
-
-    ;(async () => {
-      try {
-        const [sectionsRes, roomsRes] = await Promise.all([getCourseSections(), getRooms()])
-        if (cancelled) return
-        setSections(sectionsRes.data || [])
-        setRoomCount(roomsRes.data?.length || 0)
-      } catch {
-        // Error handled by axios interceptor
-      } finally {
-        if (!cancelled) setLoadingReadiness(false)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    fetchReadinessData()
+  }, [fetchReadinessData, location.pathname])
 
   useEffect(() => {
     return () => {
@@ -206,6 +227,7 @@ function AiScheduler() {
             setSuccessResult(result)
             saveSchedulerResult({
               semester_id: result.semester_id || selectedSemesterId,
+              cohort_ids: result.cohort_ids || cohortFilter,
               unscheduled_classes: result.unscheduled_classes || [],
               timetable_snapshot: result.timetable_snapshot || [],
               total_scheduled: result.total_scheduled,
@@ -254,7 +276,7 @@ function AiScheduler() {
       checkStatus()
       pollTimerRef.current = setInterval(checkStatus, POLL_INTERVAL_MS)
     },
-    [fetchReadinessData, selectedSemesterId, stopPolling],
+    [fetchReadinessData, selectedSemesterId, stopPolling, cohortFilter],
   )
 
   const jobStateLabel = useMemo(() => {
@@ -263,12 +285,12 @@ function AiScheduler() {
         ? `${Math.floor(pollElapsedSec / 60)} phút ${pollElapsedSec % 60}s`
         : `${pollElapsedSec}s`
     if (jobState === 'active') {
-      return `Đang chạy thuật toán tối ưu (${elapsed}) — ~400 buổi có thể 10–30+ phút...`
+      return `Đang chạy thuật toán (${elapsed})`
     }
     if (jobState === 'waiting' || jobState === 'delayed' || jobState === 'paused') {
-      return `Đang chờ trong hàng đợi (${elapsed})...`
+      return `Đang chờ trong hàng đợi (${elapsed})`
     }
-    return `AI đang xử lý (${elapsed}) — vui lòng không đóng trang...`
+    return `Đang xử lý (${elapsed})`
   }, [jobState, pollElapsedSec])
 
   const semesterOptions = useMemo(
@@ -282,8 +304,14 @@ function AiScheduler() {
 
   const semesterSections = useMemo(() => {
     if (!selectedSemesterId) return []
-    return sections.filter((section) => section.semester_id === selectedSemesterId)
-  }, [sections, selectedSemesterId])
+    return sections.filter(
+      (section) =>
+        section.semester_id === selectedSemesterId
+        && sectionMatchesCohortFilter(section, cohortFilter),
+    )
+  }, [sections, selectedSemesterId, cohortFilter])
+
+  const hasCohortFilter = cohortFilter.length > 0
 
   const readiness = useMemo(() => {
     const totalSections = semesterSections.length
@@ -301,8 +329,12 @@ function AiScheduler() {
         label: 'Lớp học phần',
         ok: hasSections,
         detail: hasSections
-          ? `${totalSections} lớp trong học kỳ`
-          : 'Chưa có lớp học phần',
+          ? hasCohortFilter
+            ? `${totalSections} lớp (${cohortFilter.join(', ')})`
+            : `${totalSections} lớp trong học kỳ`
+          : hasCohortFilter
+            ? `Không có lớp thuộc ${cohortFilter.join(', ')}`
+            : 'Chưa có lớp học phần',
         link: '/course-sections',
       },
       {
@@ -326,92 +358,20 @@ function AiScheduler() {
     ]
 
     return { totalSections, assignedSections, unassignedSections, checks, isReady }
-  }, [semesterSections, roomCount])
+  }, [semesterSections, roomCount, cohortFilter, hasCohortFilter])
 
-  const workflowProgress = useMemo(() => {
-    const hasSections = readiness.checks.find((item) => item.key === 'sections')?.ok
-    const hasLecturers = readiness.checks.find((item) => item.key === 'lecturers')?.ok
-    const hasRooms = readiness.checks.find((item) => item.key === 'rooms')?.ok
-    const isReady = readiness.isReady
-
-    const getStepStatus = (index) => {
-      if (index === 0) {
-        if (!selectedSemesterId) return 'wait'
-        return hasSections ? 'finish' : 'error'
-      }
-      if (index === 1) {
-        if (!hasSections) return 'wait'
-        return hasLecturers ? 'finish' : 'error'
-      }
-      if (index === 2) {
-        if (!isReady) return 'wait'
-        return 'process'
-      }
-      return 'wait'
+  const readinessStatus = useMemo(() => {
+    if (successResult) {
+      return { color: 'success', label: 'Đã xếp lịch' }
     }
-
-    const current = !selectedSemesterId
-      ? 0
-      : !hasSections
-        ? 0
-        : !hasLecturers || !hasRooms
-          ? 1
-          : 2
-
-    const getStepDescription = (step) => {
-      if (step.key === 'solver') {
-        if (!hasRooms && hasLecturers) return 'Thiếu phòng học'
-        return isReady ? 'Sẵn sàng' : 'Chưa đủ điều kiện'
-      }
-      if (step.key === 'timetables') return 'Sau khi xếp lịch'
-      const check = readiness.checks.find((item) => item.key === step.key)
-      if (!check?.ok && check?.link) {
-        return check.detail.length > 28 ? `${check.detail.slice(0, 26)}…` : check.detail
-      }
-      return check?.ok ? 'OK' : 'Chưa xong'
+    if (!selectedSemesterId) {
+      return { color: 'default', label: 'Chưa chọn học kỳ' }
     }
-
-    const items = WORKFLOW_STEPS.map((step, index) => {
-      const title =
-        step.key === 'solver' ? (
-          step.title
-        ) : (
-          <Link to={step.path} className="ai-workflow-step-link">
-            {step.title}
-          </Link>
-        )
-
-      return {
-        title,
-        description: getStepDescription(step),
-        status: getStepStatus(index),
-      }
-    })
-
-    return { current, items }
-  }, [readiness, selectedSemesterId])
-
-  const completedWorkflow = useMemo(() => {
-    const items = WORKFLOW_STEPS.map((step, index) => ({
-      title:
-        step.key === 'solver' ? (
-          step.title
-        ) : (
-          <Link to={step.path} className="ai-workflow-step-link">
-            {step.title}
-          </Link>
-        ),
-      description:
-        index === 2
-          ? 'Đã chạy xếp lịch thành công'
-          : index === 3
-            ? 'Xem kết quả trên trang Thời khóa biểu'
-            : 'Hoàn thành',
-      status: index < 3 ? 'finish' : 'process',
-    }))
-
-    return { current: 3, items }
-  }, [])
+    if (readiness.isReady) {
+      return { color: 'success', label: 'Sẵn sàng chạy' }
+    }
+    return { color: 'warning', label: 'Chưa đủ điều kiện' }
+  }, [successResult, selectedSemesterId, readiness.isReady])
 
   const unscheduledClasses = successResult?.unscheduled_classes || []
   const hasUnscheduled = unscheduledClasses.length > 0
@@ -423,9 +383,6 @@ function AiScheduler() {
   const handleSaveSettings = async () => {
     try {
       const values = await form.validateFields([
-        'default_lt_capacity',
-        'default_th_capacity',
-        'default_eln_capacity',
         'shift_duration',
         'allowed_start_periods',
         'allowed_days',
@@ -456,6 +413,7 @@ function AiScheduler() {
 
       const queued = await triggerAiScheduler({
         semester_id: values.semester_id,
+        cohort_ids: cohortFilter,
         config: {
           shift_duration: values.shift_duration,
           allowed_start_periods: values.allowed_start_periods,
@@ -487,22 +445,7 @@ function AiScheduler() {
           <div className="ai-loading-card">
             <Spin size="large" />
             <p className="ai-loading-text">{jobStateLabel}</p>
-            <Progress
-              percent={
-                pollElapsedSec > 0
-                  ? Math.min(95, 15 + Math.floor((pollElapsedSec / 1800) * 80))
-                  : jobState === 'active'
-                    ? 35
-                    : 15
-              }
-              status="active"
-              showInfo={false}
-              strokeColor={{ from: '#1677ff', to: '#722ed1' }}
-              style={{ width: '100%', marginTop: 16 }}
-            />
-            <p className="ai-loading-subtext">
-              Xếp lịch chạy nền (queue + solver). ~400 buổi có thể 10–30+ phút — không đóng trang.
-            </p>
+            <p className="ai-loading-subtext">Vui lòng không đóng trang trong lúc chờ.</p>
           </div>
         </div>
       ) : null}
@@ -516,6 +459,18 @@ function AiScheduler() {
                 `Đã lưu ${createdCount} buổi học vào thời khóa biểu.`
               : 'Chuẩn bị dữ liệu học kỳ, chạy thuật toán và xem thời khóa biểu.'
           }
+          filters={
+            <Select
+              allowClear
+              mode="multiple"
+              placeholder="Lọc niên khóa"
+              style={{ minWidth: 240 }}
+              options={cohortOptions}
+              value={cohortFilter}
+              onChange={setCohortFilter}
+              maxTagCount="responsive"
+            />
+          }
           actions={
             successResult ? (
               <>
@@ -526,6 +481,7 @@ function AiScheduler() {
                   onClick={() => {
                     saveSchedulerResult({
                       semester_id: successResult.semester_id || selectedSemesterId,
+                      cohort_ids: successResult.cohort_ids || cohortFilter,
                       unscheduled_classes: unscheduledClasses,
                     })
                     navigate('/timetables')
@@ -555,82 +511,44 @@ function AiScheduler() {
               </span>
               <div className="ai-result-copy">
                 <h2 className="ai-result-title">
-                  {hasUnscheduled ? 'Xếp lịch hoàn tất một phần' : 'Xếp lịch thành công'}
+                  {hasUnscheduled ? 'Hoàn tất một phần' : 'Xếp lịch thành công'}
                 </h2>
                 <p className="ai-result-message">
                   {successResult.message ||
-                    `Hệ thống đã lưu ${createdCount} buổi học vào cơ sở dữ liệu.`}
+                    `Đã lưu ${createdCount} buổi học vào cơ sở dữ liệu.`}
                 </p>
               </div>
-              <Tag color={hasUnscheduled ? 'warning' : 'success'} className="ai-result-tag">
-                {hasUnscheduled ? 'Cần xếp tay' : 'Hoàn tất'}
-              </Tag>
-            </div>
-
-            <div className="ai-result-stats">
-              <div className="ai-result-stat">
-                <div className="ai-result-stat-value">{createdCount}</div>
-                <div className="ai-result-stat-label">Buổi đã xếp & lưu</div>
+              <div className="ai-result-stats ai-result-stats--inline">
+                <div className="ai-result-stat">
+                  <span className="ai-result-stat-value">{createdCount}</span>
+                  <span className="ai-result-stat-label">Đã xếp</span>
+                </div>
+                <div className="ai-result-stat">
+                  <span className="ai-result-stat-value">{unscheduledClasses.length}</span>
+                  <span className="ai-result-stat-label">Chưa xếp</span>
+                </div>
+                {deletedCount !== undefined ? (
+                  <div className="ai-result-stat">
+                    <span className="ai-result-stat-value">{deletedCount}</span>
+                    <span className="ai-result-stat-label">Lịch cũ xóa</span>
+                  </div>
+                ) : null}
               </div>
-              <div className="ai-result-stat">
-                <div className="ai-result-stat-value">{unscheduledClasses.length}</div>
-                <div className="ai-result-stat-label">Buổi chưa xếp được</div>
-              </div>
-              {successResult.phase3_scheduled > 0 ? (
-                <div className="ai-result-stat">
-                  <div className="ai-result-stat-value">{successResult.phase3_scheduled}</div>
-                  <div className="ai-result-stat-label">Buổi xếp thêm (LNS)</div>
-                </div>
-              ) : null}
-              {deletedCount !== undefined ? (
-                <div className="ai-result-stat">
-                  <div className="ai-result-stat-value">{deletedCount}</div>
-                  <div className="ai-result-stat-label">Lịch cũ đã xóa</div>
-                </div>
-              ) : (
-                <div className="ai-result-stat">
-                  <div className="ai-result-stat-value">{successResult.semester_id || '—'}</div>
-                  <div className="ai-result-stat-label">Học kỳ đã xếp</div>
-                </div>
-              )}
             </div>
           </Card>
         ) : null}
 
         <Spin spinning={loadingReadiness}>
-          <Card className="ai-workflow-card ai-workflow-card--compact" bordered={false}>
-            <div className="ai-workflow-header ai-workflow-header--compact">
-              <div className="ai-workflow-heading">
-                <span className="ai-workflow-icon ai-workflow-icon--compact">
-                  <RobotOutlined />
-                </span>
-                <div>
-                  <h2 className="ai-workflow-title">Tiến độ chuẩn bị</h2>
-                </div>
+          <section className="ai-readiness-section">
+            <div className="ai-readiness-section__head">
+              <div className="ai-readiness-section__title">
+                <RobotOutlined className="ai-readiness-section__icon" />
+                <h2>Tiến độ chuẩn bị</h2>
               </div>
-              <Tag
-                color={
-                  successResult ? 'success' : readiness.isReady ? 'success' : 'warning'
-                }
-              >
-                {successResult
-                  ? 'Đã xếp lịch'
-                  : selectedSemesterId
-                    ? readiness.isReady
-                      ? 'Sẵn sàng'
-                      : 'Chưa đủ điều kiện'
-                    : 'Chưa chọn học kỳ'}
-              </Tag>
+              <Tag color={readinessStatus.color}>{readinessStatus.label}</Tag>
             </div>
-
-            <Steps
-              className="ai-workflow-steps ai-workflow-steps--compact"
-              size="small"
-              responsive={false}
-              current={successResult ? completedWorkflow.current : workflowProgress.current}
-              items={successResult ? completedWorkflow.items : workflowProgress.items}
-            />
-          </Card>
+            <ReadinessChecklist checks={readiness.checks} successResult={successResult} />
+          </section>
         </Spin>
 
         {successResult && hasUnscheduled ? (
@@ -639,29 +557,33 @@ function AiScheduler() {
               type="warning"
               showIcon
               className="ai-unscheduled-alert"
-              message="Các lớp không thể xếp tự động"
-              description="Hệ thống đã chạy 3 bước: xếp cứng, nới lỏng, rồi sửa cục bộ (LNS — dời một phần lịch lân cận để nhét buổi còn thiếu). Các buổi dưới đây vẫn không có ô trống hợp lệ — kiểm tra phòng/GV/nhóm SV hoặc xếp tay trên lưới TKB."
+              message={`${unscheduledClasses.length} buổi cần xếp tay`}
+              description="Kiểm tra phòng, giảng viên, nhóm sinh viên hoặc xếp thủ công trên lưới TKB."
             />
-            <Card title="Danh sách buổi cần xếp tay" className="ai-unscheduled-card">
+            <Card
+              title={`Buổi chưa xếp được (${unscheduledClasses.length})`}
+              className="ai-unscheduled-card"
+              size="small"
+            >
               <Table
-                className="ai-unscheduled-table"
+                className={`ai-unscheduled-table ${TABLE_SCROLL_CLASS}`}
                 size="middle"
                 pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} buổi` }}
                 rowKey="event_id"
                 dataSource={unscheduledClasses}
-                scroll={{ x: 720 }}
+                scroll={getTableScroll(960)}
                 columns={[
                   {
                     title: 'Mã lớp học phần',
                     dataIndex: 'section_id',
                     key: 'section_id',
-                    ellipsis: true,
+                    minWidth: 280,
                   },
                   {
                     title: 'Mã sự kiện',
                     dataIndex: 'event_id',
                     key: 'event_id',
-                    ellipsis: true,
+                    minWidth: 160,
                   },
                   {
                     title: 'Hình thức',
@@ -679,121 +601,128 @@ function AiScheduler() {
         {!successResult ? (
           <Form form={form} layout="vertical" initialValues={DEFAULT_SCHEDULING}>
             <div className="ai-scheduler-grid">
-              <Card title="Xếp lịch" className="ai-config-card">
-                <div className="ai-config-top-row">
-                  <Form.Item
-                    name="semester_id"
-                    label="Học kỳ cần xếp lịch"
-                    rules={[{ required: true, message: 'Vui lòng chọn học kỳ' }]}
-                    className="ai-config-semester"
-                  >
-                    <Select
-                      showSearch
-                      optionFilterProp="label"
-                      placeholder="Chọn học kỳ"
-                      options={semesterOptions}
-                    />
-                  </Form.Item>
-                  <Button
-                    type="primary"
-                    size="middle"
-                    icon={<PlayCircleOutlined />}
-                    loading={running}
-                    disabled={!selectedSemesterId || !readiness.isReady}
-                    onClick={handleRunSolver}
-                    className="ai-run-button-inline"
-                  >
-                    Chạy thuật toán AI
-                  </Button>
-                </div>
+              <Card className="ai-run-card" bordered={false}>
+                <Form.Item
+                  name="semester_id"
+                  label="Học kỳ"
+                  rules={[{ required: true, message: 'Vui lòng chọn học kỳ' }]}
+                  className="ai-config-semester"
+                >
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="Chọn học kỳ cần xếp lịch"
+                    options={semesterOptions}
+                    size="large"
+                  />
+                </Form.Item>
 
                 <Alert
                   type="warning"
                   showIcon
                   className="ai-config-alert"
-                  message="Mỗi lần chạy sẽ xóa hết thời khóa biểu cũ"
-                  description="Toàn bộ TKB của học kỳ đã chọn sẽ bị xóa trước khi lưu kết quả xếp lịch mới."
+                  message={
+                    hasCohortFilter
+                      ? 'Chỉ ghi đè TKB niên khóa đã chọn'
+                      : 'Ghi đè toàn bộ TKB học kỳ'
+                  }
+                  description={
+                    hasCohortFilter
+                      ? `Xóa lịch cũ của ${cohortFilter.join(', ')} trước khi lưu kết quả mới.`
+                      : 'Toàn bộ TKB học kỳ sẽ bị xóa trước khi lưu kết quả mới.'
+                  }
                 />
-              </Card>
 
-              <Card title="Cấu hình hệ thống" className="ai-settings-card">
-                <div className="settings-form-grid settings-form-grid--panel">
-                  <Form.Item
-                    name="default_lt_capacity"
-                    label="Sĩ số chuẩn LT"
-                    rules={[{ required: true, message: 'Bắt buộc' }]}
-                  >
-                    <InputNumber min={1} max={500} style={{ width: '100%' }} />
-                  </Form.Item>
-                  <Form.Item
-                    name="default_th_capacity"
-                    label="Sĩ số chuẩn TH/PM"
-                    rules={[{ required: true, message: 'Bắt buộc' }]}
-                  >
-                    <InputNumber min={1} max={500} style={{ width: '100%' }} />
-                  </Form.Item>
-                  <Form.Item
-                    name="default_eln_capacity"
-                    label="Sĩ số tối đa / lớp E-Learning"
-                    tooltip="Ghép tối đa các nhóm SV vào một lớp ONLINE; vượt ngưỡng này mới tách ELN02, ELN03… (môn đại cương toàn trường có thể để 800)."
-                    rules={[{ required: true, message: 'Bắt buộc' }]}
-                  >
-                    <InputNumber min={1} max={9999} style={{ width: '100%' }} />
-                  </Form.Item>
-                  <Form.Item
-                    name="shift_duration"
-                    label="Số tiết / ca"
-                    rules={[{ required: true, message: 'Bắt buộc' }]}
-                  >
-                    <InputNumber min={1} max={6} style={{ width: '100%' }} />
-                  </Form.Item>
-                </div>
-                <Form.Item
-                  name="allowed_start_periods"
-                  label="Tiết bắt đầu hợp lệ (Ca học)"
-                  rules={[{ required: true, message: 'Chọn ít nhất một tiết' }]}
-                >
-                  <Select
-                    mode="multiple"
-                    allowClear
-                    options={PERIOD_OPTIONS}
-                    placeholder="Chọn tiết bắt đầu ca"
-                  />
-                </Form.Item>
-                <Form.Item
-                  name="allowed_days"
-                  label="Ngày học trong tuần"
-                  rules={[{ required: true, message: 'Chọn ít nhất một ngày' }]}
-                >
-                  <Select
-                    mode="multiple"
-                    allowClear
-                    options={DAY_OPTIONS}
-                    placeholder="Chọn ngày học"
-                  />
-                </Form.Item>
-                <Form.Item
-                  name="evening_start_periods"
-                  label="Tiết bắt đầu ca tối / E-learning"
-                  rules={[{ required: true, message: 'Chọn ít nhất một tiết' }]}
-                >
-                  <Select
-                    mode="multiple"
-                    allowClear
-                    options={PERIOD_OPTIONS}
-                    placeholder="Chọn tiết ca tối"
-                  />
-                </Form.Item>
                 <Button
-                  type="default"
-                  size="middle"
-                  icon={<SaveOutlined />}
-                  loading={savingSettings}
-                  onClick={handleSaveSettings}
+                  type="primary"
+                  size="large"
+                  block
+                  icon={<PlayCircleOutlined />}
+                  loading={running}
+                  disabled={!selectedSemesterId || !readiness.isReady}
+                  onClick={handleRunSolver}
+                  className="ai-run-button"
                 >
-                  Lưu cấu hình
+                  Chạy thuật toán AI
                 </Button>
               </Card>
+
+              <Collapse
+                className="ai-settings-collapse"
+                bordered={false}
+                defaultActiveKey={['settings']}
+                items={[
+                  {
+                    key: 'settings',
+                    label: 'Cấu hình xếp lịch',
+                    extra: (
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<SaveOutlined />}
+                        loading={savingSettings}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleSaveSettings()
+                        }}
+                      >
+                        Lưu
+                      </Button>
+                    ),
+                    children: (
+                      <div className="ai-settings-fields">
+                        <div className="ai-settings-row-pair">
+                          <Form.Item
+                            name="shift_duration"
+                            label="Số tiết / ca"
+                            rules={[{ required: true, message: 'Bắt buộc' }]}
+                          >
+                            <InputNumber min={1} max={6} style={{ width: '100%' }} />
+                          </Form.Item>
+                          <Form.Item
+                            name="evening_start_periods"
+                            label="Tiết ca tối / E-learning"
+                            rules={[{ required: true, message: 'Chọn tiết ca tối' }]}
+                            getValueProps={(value) => ({
+                              value:
+                                Array.isArray(value) && value.length ? value[0] : (value ?? null),
+                            })}
+                            normalize={(value) =>
+                              value == null || value === '' ? [] : [Number(value)]
+                            }
+                          >
+                            <Select
+                              options={PERIOD_OPTIONS}
+                              placeholder="Chọn tiết"
+                              style={{ width: '100%' }}
+                            />
+                          </Form.Item>
+                        </div>
+                        <Form.Item
+                          name="allowed_start_periods"
+                          label="Tiết bắt đầu ca"
+                          rules={[{ required: true, message: 'Chọn ít nhất một tiết' }]}
+                        >
+                          <Checkbox.Group
+                            options={PERIOD_OPTIONS}
+                            className="ai-checkbox-grid ai-checkbox-grid--periods"
+                          />
+                        </Form.Item>
+                        <Form.Item
+                          name="allowed_days"
+                          label="Ngày học trong tuần"
+                          rules={[{ required: true, message: 'Chọn ít nhất một ngày' }]}
+                        >
+                          <Checkbox.Group
+                            options={DAY_OPTIONS}
+                            className="ai-checkbox-grid ai-checkbox-grid--days"
+                          />
+                        </Form.Item>
+                      </div>
+                    ),
+                  },
+                ]}
+              />
             </div>
           </Form>
         ) : null}

@@ -75,7 +75,12 @@ function buildEventMetaLookup(events = []) {
     return lookup;
 }
 
-async function persistTimetables(semesterId, rows, eventMetaLookup = new Map()) {
+async function persistTimetables(semesterId, rows, eventMetaLookup = new Map(), options = {}) {
+    const scopedSectionIds = Array.isArray(options.sectionIds)
+        ? options.sectionIds.filter(Boolean)
+        : [];
+    const cohortScoped = Boolean(options.cohortScoped && scopedSectionIds.length > 0);
+
     const semester = await prisma.semester.findUnique({
         where: { semester_id: semesterId },
         select: { start_date: true, end_date: true },
@@ -83,11 +88,13 @@ async function persistTimetables(semesterId, rows, eventMetaLookup = new Map()) 
 
     return prisma.$transaction(async (tx) => {
         const deleted = await tx.timetable.deleteMany({
-            where: {
-                section: {
-                    semester_id: semesterId,
+            where: cohortScoped
+                ? { section_id: { in: scopedSectionIds } }
+                : {
+                    section: {
+                        semester_id: semesterId,
+                    },
                 },
-            },
         });
 
         let createdCount = 0;
@@ -135,9 +142,11 @@ const schedulerWorker = new Worker(
         const lockHeartbeat = startLockHeartbeat(job);
 
         try {
-            const { semester_id: semesterId, config = {} } = job.data;
+            const { semester_id: semesterId, config = {}, cohort_ids: cohortIds = [] } = job.data;
 
-            const solvePayload = await buildSolvePayload(prisma, semesterId, config);
+            const solvePayload = await buildSolvePayload(prisma, semesterId, config, {
+                cohort_ids: cohortIds,
+            });
             console.log(
                 `[schedulerQueue] Solver payload: ${solvePayload.rooms.length} rooms, `
                 + `${solvePayload.events?.length || 0} events, semester=${semesterId}`,
@@ -171,14 +180,22 @@ const schedulerWorker = new Worker(
             const timetableRows = payload.data || payload.timetable || [];
             const unscheduledClasses = payload.unscheduled_classes || [];
             const eventMetaLookup = buildEventMetaLookup(solvePayload.events || []);
+            const cohortScoped = (solvePayload.cohort_ids || []).length > 0;
             const { deletedCount, createdCount } = await persistTimetables(
                 semesterId,
                 timetableRows,
                 eventMetaLookup,
+                {
+                    sectionIds: solvePayload.scoped_section_ids,
+                    cohortScoped,
+                },
             );
 
             const unscheduledCount = unscheduledClasses.length;
-            const baseMessage = `Đã xóa ${deletedCount} lịch cũ, lưu ${createdCount} lịch mới cho học kỳ ${semesterId}.`;
+            const cohortLabel = cohortScoped
+                ? ` niên khóa ${solvePayload.cohort_ids.join(', ')}`
+                : '';
+            const baseMessage = `Đã xóa ${deletedCount} lịch cũ, lưu ${createdCount} lịch mới cho học kỳ ${semesterId}${cohortLabel}.`;
             const message =
                 unscheduledCount > 0
                     ? `${baseMessage} ${unscheduledCount} buổi không thể xếp tự động.`
@@ -199,6 +216,7 @@ const schedulerWorker = new Worker(
                 deleted_count: deletedCount,
                 created_count: createdCount,
                 semester_id: semesterId,
+                cohort_ids: solvePayload.cohort_ids || [],
             };
         } finally {
             clearInterval(lockHeartbeat);

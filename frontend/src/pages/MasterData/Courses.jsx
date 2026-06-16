@@ -72,6 +72,7 @@ function Courses() {
       dataIndex: 'course_name',
       key: 'course_name',
       ellipsis: true,
+      width: 'auto',
     },
     {
       title: 'TC LT',
@@ -118,6 +119,7 @@ function Courses() {
       title: 'Khoa quản lý',
       key: 'unit_name',
       ellipsis: true,
+      width: 'auto',
       render: (_, record) => record.unit?.unit_name || '—',
     },
   ]

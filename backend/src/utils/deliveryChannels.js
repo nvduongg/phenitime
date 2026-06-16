@@ -195,12 +195,13 @@ function resolveOnlineSectionClassType(channel) {
     return 'ELN';
 }
 
+/** Hình thức học xuất báo cáo: ELN (LMS), COUR (Coursera) — không dùng ELN0. */
 function resolveOnlineExportClassType(sectionClassType = 'ELN') {
     const normalized = String(sectionClassType || '').trim().toUpperCase();
-    if (normalized === 'ELN' || normalized === 'ONLINE_ELEARNING' || normalized === 'ONLINE_COURSERA') {
-        return 'ELN0';
+    if (['ELN', 'ELN0', 'ONLINE_ELEARNING', 'ELEARNING', 'ONLINE'].includes(normalized)) {
+        return 'ELN';
     }
-    return normalized || 'ELN0';
+    return normalized || 'ELN';
 }
 
 function isOnlineSectionGroupCode(groupCode) {

@@ -27,6 +27,7 @@ const {
     formatCoupledPracticeGroupCode,
     resolveCourseSectioningProfile,
 } = require('../utils/sectioningTemplates');
+const { getCapacityForRoomType, isPracticeRoomType } = require('../constants/roomTypes');
 const {
     DEFAULT_SCHEDULING_CONFIG,
     getSchedulingConfig,
@@ -93,6 +94,95 @@ function resolveOnlineSectionCapacity(schedulingConfig) {
     return SECTIONING_TEMPLATES.ONLINE.cap;
 }
 
+function resolveLtSectionCapacity(schedulingConfig) {
+    const configured = Number(schedulingConfig?.default_lt_capacity);
+    if (Number.isFinite(configured) && configured > 0) {
+        return configured;
+    }
+    return SECTIONING_TEMPLATES.STANDARD.ltCap;
+}
+
+function resolveThSectionCapacity(schedulingConfig) {
+    const configured = Number(schedulingConfig?.default_th_capacity);
+    if (Number.isFinite(configured) && configured > 0) {
+        return configured;
+    }
+    return SECTIONING_TEMPLATES.STANDARD.thCap;
+}
+
+/** Trần tách lớp TH/PM: min(cấu hình, trần phòng an toàn). PC lab 40–45 chỗ → lập kế hoạch theo 40. */
+function resolvePracticeSectionCapacity(schedulingConfig, roomTypeReq) {
+    const configured = resolveThSectionCapacity(schedulingConfig);
+    const normalized = String(roomTypeReq || '').trim().toUpperCase();
+
+    if (['PC', 'PM', 'TH', 'LAB'].includes(normalized)) {
+        const conservativePcCap = Math.min(
+            getCapacityForRoomType('PM'),
+            getCapacityForRoomType('PC'),
+        );
+        return Math.min(configured, conservativePcCap);
+    }
+
+    if (isPracticeRoomType(roomTypeReq)) {
+        return Math.min(configured, getCapacityForRoomType(roomTypeReq));
+    }
+
+    return configured;
+}
+
+/** Coursera: tách nhiều track COUR01 (~200–280 SV) như TKB thực, không gom hết vào một lớp. */
+const DEFAULT_COUR_TRACK_CAPACITY = 240;
+
+function resolveCourseraOnlineCapacity(schedulingConfig) {
+    const configured = Number(schedulingConfig?.default_cour_capacity);
+    if (Number.isFinite(configured) && configured > 0) {
+        return configured;
+    }
+    return Math.min(
+        resolveOnlineSectionCapacity(schedulingConfig),
+        DEFAULT_COUR_TRACK_CAPACITY,
+    );
+}
+
+function resolvePositiveCapacity(value, fallback) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+    }
+    return fallback;
+}
+
+/** Ghép config xếp lịch (ca học, tuần…) với trần sinh lớp từ request popup. */
+function buildSectioningConfig(schedulingConfig, options = {}) {
+    return {
+        ...schedulingConfig,
+        default_lt_capacity: resolvePositiveCapacity(
+            options.default_lt_capacity,
+            schedulingConfig.default_lt_capacity,
+        ),
+        default_th_capacity: resolvePositiveCapacity(
+            options.default_th_capacity,
+            schedulingConfig.default_th_capacity,
+        ),
+        default_eln_capacity: resolvePositiveCapacity(
+            options.default_eln_capacity,
+            schedulingConfig.default_eln_capacity,
+        ),
+        default_cour_capacity: resolvePositiveCapacity(
+            options.default_cour_capacity,
+            schedulingConfig.default_cour_capacity ?? DEFAULT_COUR_TRACK_CAPACITY,
+        ),
+    };
+}
+
+function resolveDefaultStudentCount(schedulingConfig) {
+    const fromConfig = Number(schedulingConfig?.default_student_count);
+    if (Number.isFinite(fromConfig) && fromConfig > 0) {
+        return fromConfig;
+    }
+    return DEFAULT_AVERAGE_COHORT_SIZE;
+}
+
 /** Online/async courses share one pool per course_id — pack many admin groups into fewer ELN sections. */
 function shouldMergeGroupsAcrossCurricula(course) {
     const channel = resolveDeliveryChannel(course);
@@ -108,6 +198,25 @@ function shouldMergeGroupsAcrossCurricula(course) {
     }
 
     return resolveCourseTemplateCode(course) === 'ONLINE';
+}
+
+function resolvePlanningEnrollmentCapacity(slot, requiresScheduling) {
+    const targetCap = Number(slot?.capacity) || 0;
+    const allocated = Number(slot?.allocatedHeadcount);
+
+    if (!requiresScheduling) {
+        if (Number.isFinite(allocated) && allocated > 0) {
+            return allocated;
+        }
+        return targetCap;
+    }
+
+    /** Lớp lẻ / lớp gộp đuôi: hiển thị sĩ số thực; lớp đủ trần hiển thị trần — khớp TKB thực (40×N + lớp cuối lẻ). */
+    if (Number.isFinite(allocated) && allocated > 0 && allocated !== targetCap) {
+        return allocated;
+    }
+
+    return targetCap;
 }
 
 function buildSectionDraft({
@@ -144,7 +253,34 @@ function buildSectionDraft({
 
 /**
  * Queue-based continuous rolling allocation (ghép gối đầu / split queue).
+ * Lớp cuối nếu quá nhỏ (< 50% trần, tối thiểu 15 SV) được gộp vào lớp trước — tránh lớp 4–6 SV trong TKB dự kiến.
  */
+function resolveMinSectionHeadcount(targetCapacity) {
+    const cap = Number(targetCapacity) || 0;
+    if (cap <= 0) return 15;
+    return Math.max(15, Math.floor(cap * 0.5));
+}
+
+function mergeUndersizedTailSections(sections, targetCapacity) {
+    if (sections.length < 2) {
+        return sections;
+    }
+
+    const minSize = resolveMinSectionHeadcount(targetCapacity);
+    const last = sections[sections.length - 1];
+    if (last.allocatedHeadcount >= minSize) {
+        return sections;
+    }
+
+    const previous = sections[sections.length - 2];
+    previous.allocatedHeadcount += last.allocatedHeadcount;
+    previous.studentGroupIds = [
+        ...new Set([...previous.studentGroupIds, ...last.studentGroupIds]),
+    ];
+    sections.pop();
+    return mergeUndersizedTailSections(sections, targetCapacity);
+}
+
 function allocateSections(studentGroups, targetCapacity, nameSuffixBuilder) {
     if (!studentGroups.length || targetCapacity <= 0) {
         return [];
@@ -184,12 +320,43 @@ function allocateSections(studentGroups, targetCapacity, nameSuffixBuilder) {
         sections.push({
             nameSuffix: nameSuffixBuilder(sectionIndex),
             capacity: targetCapacity,
+            /** Sĩ số thực tế sau ghép gối đầu (≤ capacity/trần phòng). */
+            allocatedHeadcount: currentFill,
             studentGroupIds: Array.from(linkedGroups),
         });
         sectionIndex += 1;
     }
 
-    return sections;
+    return mergeUndersizedTailSections(sections, targetCapacity);
+}
+
+/** Gắn sĩ số đúng với track online/COUR01 (không lấy cả pool 553 SV cho mỗi COUR01). */
+function buildStudentGroupsForSlot(studentGroups, slot) {
+    const linked = studentGroups.filter((group) =>
+        slot.studentGroupIds.includes(group.group_id));
+
+    if (!linked.length) {
+        return [];
+    }
+
+    if (linked.length === 1) {
+        return [{
+            ...linked[0],
+            headcount: slot.allocatedHeadcount,
+        }];
+    }
+
+    const totalLinked = linked.reduce((sum, group) => sum + (group.headcount || 0), 0);
+    let remaining = slot.allocatedHeadcount;
+
+    return linked.map((group) => {
+        const share = totalLinked > 0
+            ? Math.round((group.headcount / totalLinked) * slot.allocatedHeadcount)
+            : 0;
+        const headcount = Math.min(group.headcount, share, remaining);
+        remaining -= headcount;
+        return { ...group, headcount };
+    }).filter((group) => group.headcount > 0);
 }
 
 function formatPracticeGroupCode(index, practiceSlotsPerTheoryGroup) {
@@ -259,7 +426,8 @@ function stampAllocatedSections({
             groupCode: slot.nameSuffix,
             classType,
             roomTypeReq,
-            capacity: slot.capacity,
+            /** TKB dự kiến: trần chuẩn (40/45…); lớp lẻ cuối hiển thị đủ SV còn lại. */
+            capacity: resolvePlanningEnrollmentCapacity(slot, requires_scheduling),
             groupIds: slot.studentGroupIds,
             scheduleParams,
             schedulingEvents,
@@ -317,12 +485,15 @@ function generateCourseraHybridSections({
     schedulingConfig,
 }) {
     const onlineTemplate = SECTIONING_TEMPLATES.ONLINE;
-    const onlineCap = resolveOnlineSectionCapacity(schedulingConfig);
+    const onlineCap = resolveCourseraOnlineCapacity(schedulingConfig);
     const physicalTemplateCode = resolvePhysicalTemplateForSplit(course);
     const physicalTemplate = SECTIONING_TEMPLATES[physicalTemplateCode]
         || SECTIONING_TEMPLATES.LAB_COUPLED;
     const physicalCourse = sliceCourseCredits(course, { practiceOnly: true });
-    const thCap = physicalTemplate.thCap || physicalTemplate.syncCap || 40;
+    const practiceRoom = resolvePracticeRoomTypeReq(course, physicalTemplate);
+    const thCap = physicalTemplateCode === 'MEDICAL_CLINIC'
+        ? physicalTemplate.cap
+        : resolvePracticeSectionCapacity(schedulingConfig, practiceRoom);
 
     const onlineSlots = allocateSections(
         studentGroups,
@@ -350,8 +521,7 @@ function generateCourseraHybridSections({
     const physicalSections = [];
 
     for (const onlineSlot of onlineSlots) {
-        const slotGroups = normalizedGroups.filter((group) =>
-            onlineSlot.studentGroupIds.includes(group.group_id));
+        const slotGroups = buildStudentGroupsForSlot(normalizedGroups, onlineSlot);
 
         if (!slotGroups.length) continue;
 
@@ -367,7 +537,7 @@ function generateCourseraHybridSections({
             scheduleSuffix,
             allocatedSlots: practiceSlots,
             classType: 'TH',
-            roomTypeReq: resolvePracticeRoomTypeReq(course, physicalTemplate),
+            roomTypeReq: practiceRoom,
             shiftDuration: schedulingConfig.shift_duration,
             schedulingConfig,
             requires_scheduling: true,
@@ -447,10 +617,12 @@ function generateStandardSections({
     studentGroups,
     schedulingConfig,
 }) {
-    const template = SECTIONING_TEMPLATES.STANDARD;
+    const ltCap = resolveLtSectionCapacity(schedulingConfig);
+    const practiceRoom = resolvePracticeRoomTypeReq(course, SECTIONING_TEMPLATES.STANDARD);
+    const thCap = resolvePracticeSectionCapacity(schedulingConfig, practiceRoom);
     const practiceSlotsPerTheoryGroup = Math.max(
         1,
-        Math.ceil(template.ltCap / template.thCap),
+        Math.ceil(ltCap / thCap),
     );
     const sections = [];
 
@@ -461,11 +633,11 @@ function generateStandardSections({
             scheduleSuffix,
             allocatedSlots: allocateSections(
                 studentGroups,
-                template.ltCap,
+                ltCap,
                 (index) => formatTheoryGroupCode(index),
             ),
             classType: 'LT',
-            roomTypeReq: resolveTheoryRoomTypeReq(course, template),
+            roomTypeReq: resolveTheoryRoomTypeReq(course, SECTIONING_TEMPLATES.STANDARD),
             shiftDuration: schedulingConfig.shift_duration,
             schedulingConfig,
         }));
@@ -478,11 +650,11 @@ function generateStandardSections({
             scheduleSuffix,
             allocatedSlots: allocateSections(
                 studentGroups,
-                template.thCap,
+                thCap,
                 (index) => formatPracticeGroupCode(index, practiceSlotsPerTheoryGroup),
             ),
             classType: 'TH',
-            roomTypeReq: resolvePracticeRoomTypeReq(course, template),
+            roomTypeReq: resolvePracticeRoomTypeReq(course, SECTIONING_TEMPLATES.STANDARD),
             shiftDuration: schedulingConfig.shift_duration,
             schedulingConfig,
         }));
@@ -501,9 +673,10 @@ function generateLabCoupledSections({
 }) {
     const template = SECTIONING_TEMPLATES.LAB_COUPLED;
     const defaultRoom = resolvePracticeRoomTypeReq(course, template);
+    const syncCap = resolvePracticeSectionCapacity(schedulingConfig, defaultRoom);
     const slots = allocateSections(
         studentGroups,
-        template.syncCap,
+        syncCap,
         (index) => formatTheoryGroupCode(index),
     );
 
@@ -691,10 +864,11 @@ function normalizeCohortIds(options = {}) {
 }
 
 async function autoGenerateCourseSections(prisma, options = {}) {
-    const {
-        semester_id,
-        default_student_count: defaultStudentCount = DEFAULT_AVERAGE_COHORT_SIZE,
-    } = options;
+    const { semester_id } = options;
+
+    const schedulingConfig = await getSchedulingConfig(prisma);
+    const sectioningConfig = buildSectioningConfig(schedulingConfig, options);
+    const defaultStudentCount = resolveDefaultStudentCount(schedulingConfig);
     const cohortIds = normalizeCohortIds(options);
 
     if (!semester_id) {
@@ -727,8 +901,6 @@ async function autoGenerateCourseSections(prisma, options = {}) {
         error.statusCode = 400;
         throw error;
     }
-
-    const schedulingConfig = await getSchedulingConfig(prisma);
 
     const curriculumWhere = { cohort_id: { in: cohortIds } };
     const curricula = await prisma.curriculum.findMany({
@@ -792,21 +964,21 @@ async function autoGenerateCourseSections(prisma, options = {}) {
         };
     }
 
-    const allGroupIds = [
-        ...new Set(activePlans.flatMap((plan) => plan.studentGroups.map((group) => group.group_id))),
-    ];
-
     let removedCount = 0;
-    if (allGroupIds.length > 0) {
-        const removed = await prisma.courseSection.deleteMany({
+    if (cohortIds.length > 0) {
+        const removedByCohort = await prisma.courseSection.deleteMany({
             where: {
                 semester_id,
                 student_groups: {
-                    some: { group_id: { in: allGroupIds } },
+                    some: {
+                        curriculum: {
+                            cohort_id: { in: cohortIds },
+                        },
+                    },
                 },
             },
         });
-        removedCount = removed.count;
+        removedCount += removedByCohort.count;
     }
 
     const generatedSections = [];
@@ -851,7 +1023,7 @@ async function autoGenerateCourseSections(prisma, options = {}) {
             semesterId: semester_id,
             scheduleSuffix,
             studentGroups: mergeStudentGroupRecords(groupLists),
-            schedulingConfig,
+            schedulingConfig: sectioningConfig,
         });
         generatedSections.push(...sections);
     }
@@ -862,7 +1034,7 @@ async function autoGenerateCourseSections(prisma, options = {}) {
             semesterId: semester_id,
             scheduleSuffix,
             studentGroups,
-            schedulingConfig,
+            schedulingConfig: sectioningConfig,
         });
         generatedSections.push(...sections);
     }
@@ -871,6 +1043,14 @@ async function autoGenerateCourseSections(prisma, options = {}) {
         `${section.section_id}::${section.class_type}`,
         section,
     ])).values()];
+
+    const draftSectionIds = uniqueSections.map((section) => section.section_id).filter(Boolean);
+    if (draftSectionIds.length > 0) {
+        const replaced = await prisma.courseSection.deleteMany({
+            where: { section_id: { in: draftSectionIds } },
+        });
+        removedCount += replaced.count;
+    }
 
     const dedupedCount = generatedSections.length - uniqueSections.length;
     if (dedupedCount > 0) {

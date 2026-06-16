@@ -23,7 +23,7 @@ import {
   message,
 } from 'antd'
 import PageHeader from '../../components/Common/PageHeader'
-import { getTableScroll } from '../../config/table'
+import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
 import {
   createOrganizationUnit,
   deleteOrganizationUnit,
@@ -353,6 +353,7 @@ function Departments() {
 
         <Spin spinning={loading}>
           <Table
+            className={TABLE_SCROLL_CLASS}
             rowKey="unit_id"
             columns={columns}
             dataSource={treeData}
