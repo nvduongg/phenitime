@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { DeleteOutlined, ExportOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import {
   Alert,
@@ -37,9 +38,11 @@ import {
   deleteCourseSection,
   getCohorts,
   getCourseSections,
+  getSemesterWaves,
 } from '../../services/api'
 import { formatCohortLabel } from '../../utils/formatters'
 import { loadCohortFilter, saveCohortFilter } from '../../utils/cohortFilterStorage'
+import { findWaveForCohorts } from '../../utils/semesterWaves'
 
 const SECTION_CAPS_STORAGE_KEY = 'phenitime:sectionGenerationCaps'
 
@@ -81,6 +84,9 @@ function CourseSections() {
   const [autoGenOpen, setAutoGenOpen] = useState(false)
   const [cohortOptions, setCohortOptions] = useState([])
   const [selectedCohortIds, setSelectedCohortIds] = useState([])
+  const [semesterWaves, setSemesterWaves] = useState([])
+  const [loadingWaves, setLoadingWaves] = useState(false)
+  const [selectedWaveId, setSelectedWaveId] = useState(undefined)
   const [cohortFilter, setCohortFilterState] = useState(() => loadCohortFilter())
   const [sectionCaps, setSectionCaps] = useState(DEFAULT_SECTION_CAPS)
 
@@ -187,6 +193,93 @@ function CourseSections() {
     })
   }, [sections, effectiveSemesterFilter, cohortFilter, searchText])
 
+  const displaySections = useMemo(
+    () => sortCourseSectionsForExport(filteredSections),
+    [filteredSections],
+  )
+
+  const selectedWave = useMemo(
+    () =>
+      semesterWaves.find(
+        (wave) =>
+          wave.wave_id === selectedWaveId
+          || String(wave.wave_order) === String(selectedWaveId),
+      ) || null,
+    [semesterWaves, selectedWaveId],
+  )
+
+  const waveDriven = semesterWaves.length > 0
+
+  const effectiveCohortIds = useMemo(() => {
+    if (selectedWave?.cohort_ids?.length) {
+      return selectedWave.cohort_ids
+    }
+    return selectedCohortIds
+  }, [selectedWave, selectedCohortIds])
+
+  const waveOptions = useMemo(
+    () =>
+      semesterWaves.map((wave) => ({
+        value: wave.wave_id,
+        label: `${wave.wave_name || `Đợt ${wave.wave_order}`} — tuần ${wave.start_week} (${(wave.cohort_ids || []).join(', ')})`,
+      })),
+    [semesterWaves],
+  )
+
+  const cohortLabelLookup = useMemo(
+    () => new Map(cohortOptions.map((option) => [option.value, option.label])),
+    [cohortOptions],
+  )
+
+  const canSubmitAutoGenerate = waveDriven
+    ? Boolean(selectedWaveId && effectiveCohortIds.length)
+    : effectiveCohortIds.length > 0
+
+  useEffect(() => {
+    if (!autoGenOpen || !effectiveSemesterFilter) {
+      return
+    }
+
+    setLoadingWaves(true)
+    getSemesterWaves(effectiveSemesterFilter)
+      .then((result) => {
+        const waves = result.data || []
+        setSemesterWaves(waves)
+
+        const savedCohorts = cohortFilter.length ? cohortFilter : loadCohortFilter()
+        const matched = findWaveForCohorts(waves, savedCohorts)
+        if (matched?.wave_id) {
+          setSelectedWaveId(matched.wave_id)
+          setSelectedCohortIds(matched.cohort_ids || [])
+        } else if (waves.length === 0) {
+          setSelectedWaveId(undefined)
+          setSelectedCohortIds(savedCohorts)
+        } else {
+          setSelectedWaveId(undefined)
+          setSelectedCohortIds([])
+        }
+      })
+      .catch(() => {
+        setSemesterWaves([])
+        setSelectedWaveId(undefined)
+        setSelectedCohortIds(cohortFilter.length ? cohortFilter : loadCohortFilter())
+      })
+      .finally(() => setLoadingWaves(false))
+  }, [autoGenOpen, effectiveSemesterFilter, cohortFilter])
+
+  const handleWaveChange = (waveId) => {
+    setSelectedWaveId(waveId)
+    if (!waveId) {
+      setSelectedCohortIds([])
+      return
+    }
+
+    const wave = semesterWaves.find(
+      (item) => item.wave_id === waveId || String(item.wave_order) === String(waveId),
+    )
+    setSelectedCohortIds(wave?.cohort_ids || [])
+  }
+
   const handleOpenImport = () => {
     if (!effectiveSemesterFilter) {
       message.warning('Vui lòng chọn học kỳ trước khi nhập Excel')
@@ -205,7 +298,12 @@ function CourseSections() {
   }
 
   const handleAutoGenerate = async () => {
-    if (selectedCohortIds.length === 0) {
+    if (waveDriven && !selectedWaveId) {
+      message.warning('Vui lòng chọn đợt sinh lớp')
+      return
+    }
+
+    if (effectiveCohortIds.length === 0) {
       message.warning('Vui lòng chọn ít nhất một niên khóa')
       return
     }
@@ -224,7 +322,8 @@ function CourseSections() {
       saveSectionCaps(sectionCaps)
       const result = await autoGenerateSections({
         semester_id: effectiveSemesterFilter,
-        cohort_ids: selectedCohortIds,
+        cohort_ids: effectiveCohortIds,
+        wave_id: selectedWaveId || null,
         default_lt_capacity: sectionCaps.default_lt_capacity,
         default_th_capacity: sectionCaps.default_th_capacity,
         default_eln_capacity: sectionCaps.default_eln_capacity,
@@ -234,7 +333,7 @@ function CourseSections() {
 
       await fetchSections()
 
-      setCohortFilter([...selectedCohortIds])
+      setCohortFilter([...effectiveCohortIds])
 
       message.success({
         content: result.message || `Đã sinh thành công ${createdCount} lớp học phần!`,
@@ -480,7 +579,7 @@ function CourseSections() {
         className={TABLE_SCROLL_CLASS}
         rowKey="section_id"
         columns={columns}
-        dataSource={filteredSections}
+        dataSource={displaySections}
         pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} lớp học phần` }}
         scroll={getTableScroll(1680)}
         sticky
@@ -500,30 +599,99 @@ function CourseSections() {
       <Modal
         title="Sinh lớp tự động"
         className="auto-gen-modal"
-        width={780}
+        width={820}
         open={autoGenOpen}
         onCancel={() => setAutoGenOpen(false)}
         onOk={handleAutoGenerate}
         okText="Sinh lớp"
         cancelText="Hủy"
         confirmLoading={generating}
-        okButtonProps={{ disabled: selectedCohortIds.length === 0 }}
+        okButtonProps={{ disabled: !canSubmitAutoGenerate || loadingWaves }}
         destroyOnHidden
         centered
       >
-        <p className="auto-gen-modal__lead">
-          Sinh lớp theo lộ trình CTĐT cho học kỳ đang chọn trên toolbar.
-        </p>
+        <div className="auto-gen-modal__header">
+          <p className="auto-gen-modal__lead">
+            Sinh lớp theo lộ trình CTĐT. Chọn đợt trước để đồng bộ với xếp lịch AI.
+          </p>
+          {effectiveSemesterFilter ? (
+            <Tag color="blue" className="auto-gen-modal__semester-tag">
+              {semesterLookup.get(effectiveSemesterFilter)?.semester_name || effectiveSemesterFilter}
+            </Tag>
+          ) : null}
+        </div>
 
-        <div className="auto-gen-modal__body">
-          <div className="auto-gen-modal__panel auto-gen-modal__panel--config">
+        <div className="auto-gen-modal__wave-panel">
+          <div className="auto-gen-modal__field">
+            <label className="auto-gen-modal__field-label" htmlFor="auto-gen-wave">
+              Đợt sinh lớp{waveDriven ? ' *' : ''}
+            </label>
+            <Select
+              id="auto-gen-wave"
+              allowClear={!waveDriven}
+              loading={loadingWaves}
+              placeholder={
+                loadingWaves
+                  ? 'Đang tải đợt...'
+                  : waveDriven
+                    ? 'Chọn đợt (VD: Đ1 K16-K17, Đ2 K18...)'
+                    : 'Chưa có đợt — chọn niên khóa thủ công bên dưới'
+              }
+              value={selectedWaveId}
+              onChange={handleWaveChange}
+              options={waveOptions}
+              disabled={loadingWaves || !waveDriven}
+              notFoundContent="Chưa có đợt nào"
+              className="auto-gen-modal__wave-select"
+            />
+          </div>
+
+          {!loadingWaves && waveDriven && selectedWave ? (
+            <div className="auto-gen-modal__wave-meta">
+              <div className="auto-gen-modal__wave-meta-row">
+                <Tag color="purple" className="auto-gen-modal__wave-meta-tag">
+                  Tuần HK {selectedWave.start_week}
+                </Tag>
+                <span className="auto-gen-modal__wave-meta-label">Niên khóa:</span>
+                <div className="auto-gen-modal__cohort-tags">
+                  {effectiveCohortIds.map((cohortId) => (
+                    <Tag key={cohortId} color="cyan" className="auto-gen-modal__cohort-tag">
+                      {cohortLabelLookup.get(cohortId) || cohortId}
+                    </Tag>
+                  ))}
+                </div>
+              </div>
+              <p className="auto-gen-modal__wave-meta-note">
+                Lớp cũ của các niên khóa trên sẽ bị thay thế khi sinh lại.
+              </p>
+            </div>
+          ) : null}
+
+          {!loadingWaves && effectiveSemesterFilter && !waveDriven ? (
+            <Alert
+              type="warning"
+              showIcon
+              className="auto-gen-modal__wave-summary"
+              message="Học kỳ chưa có đợt"
+              description={
+                <>
+                  Vào <Link to="/master-data/semesters">Danh mục → Học kỳ</Link>, bấm biểu tượng lịch
+                  để cấu hình đợt (khuyến nghị). Tạm thời chọn niên khóa thủ công bên dưới.
+                </>
+              }
+            />
+          ) : null}
+        </div>
+
+        <div className="auto-gen-modal__stack">
+          <section className="auto-gen-modal__section">
             <div className="auto-gen-modal__panel-title">Trần ghép lớp</div>
             <p className="auto-gen-modal__hint">
-              Sĩ số tối đa mỗi lớp khi tách LT, TH/PM và ONLINE. Phòng máy thực tế 40–45 chỗ;
-              hệ thống lập kế hoạch theo trần an toàn 40 cho TH/PM (dù bạn nhập 45).
+              Sĩ số tối đa mỗi lớp khi tách LT, TH/PM và ONLINE. TH/PM luôn dùng trần an toàn 40
+              (phòng máy không đồng nhất).
             </p>
 
-            <div className="auto-gen-modal__caps">
+            <div className="auto-gen-modal__caps auto-gen-modal__caps--grid">
               <div className="auto-gen-modal__field">
                 <label className="auto-gen-modal__field-label" htmlFor="auto-gen-lt-cap">
                   Sĩ số chuẩn LT
@@ -558,7 +726,7 @@ function CourseSections() {
                     }))}
                 />
                 <span className="auto-gen-modal__field-hint">
-                  Trần tham chiếu; tách lớp PM/PC dùng min(giá trị này, 40) vì phòng máy không đồng nhất.
+                  Tách PM/PC: min(giá trị này, 40).
                 </span>
               </div>
               <div className="auto-gen-modal__field">
@@ -578,7 +746,7 @@ function CourseSections() {
                     }))}
                 />
                 <span className="auto-gen-modal__field-hint">
-                  TKB thực thường 200–280 SV / COUR01; tách COUR02… khi vượt.
+                  Thường 200–280 SV / COUR01; tách track khi vượt.
                 </span>
               </div>
               <div className="auto-gen-modal__field">
@@ -598,71 +766,82 @@ function CourseSections() {
                     }))}
                 />
                 <span className="auto-gen-modal__field-hint">
-                  Chỉ áp dụng học phần e-learning thuần; Coursera dùng trần riêng ở trên.
+                  E-learning thuần; Coursera dùng trần riêng.
                 </span>
               </div>
             </div>
+          </section>
 
-            <Alert
-              type="warning"
-              showIcon
-              className="auto-gen-modal__warn"
-              message="Lớp cũ của niên khóa đã chọn sẽ bị thay thế. Lớp trùng mã (cùng học phần) từ niên khóa khác cũng được ghi đè."
-            />
-          </div>
+          {!waveDriven ? (
+            <section className="auto-gen-modal__section">
+              <div className="auto-gen-modal__panel-head">
+                <div>
+                  <div className="auto-gen-modal__panel-title">Niên khóa áp dụng</div>
+                  {effectiveCohortIds.length > 0 ? (
+                    <span className="auto-gen-modal__selected-count">
+                      Đã chọn {effectiveCohortIds.length}
+                    </span>
+                  ) : (
+                    <span className="auto-gen-modal__selected-count auto-gen-modal__selected-count--empty">
+                      Chưa chọn niên khóa
+                    </span>
+                  )}
+                </div>
+                <span className="auto-gen-modal__panel-actions">
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => setSelectedCohortIds(cohortOptions.map((item) => item.value))}
+                    disabled={cohortOptions.length === 0}
+                  >
+                    Tất cả
+                  </Button>
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => setSelectedCohortIds([])}
+                    disabled={selectedCohortIds.length === 0}
+                  >
+                    Bỏ chọn
+                  </Button>
+                </span>
+              </div>
 
-          <div className="auto-gen-modal__panel auto-gen-modal__panel--cohorts">
-            <div className="auto-gen-modal__panel-head">
-              <div>
-                <div className="auto-gen-modal__panel-title">Niên khóa áp dụng</div>
-                {selectedCohortIds.length > 0 ? (
-                  <span className="auto-gen-modal__selected-count">
-                    Đã chọn {selectedCohortIds.length}
-                  </span>
+              <div className="auto-gen-cohort-list auto-gen-cohort-list--grid">
+                {cohortOptions.length === 0 ? (
+                  <span className="auto-gen-modal__empty">Chưa có niên khóa</span>
                 ) : (
-                  <span className="auto-gen-modal__selected-count auto-gen-modal__selected-count--empty">
-                    Chưa chọn niên khóa
-                  </span>
+                  <Checkbox.Group
+                    value={selectedCohortIds}
+                    onChange={setSelectedCohortIds}
+                    className="auto-gen-cohort-grid auto-gen-cohort-grid--wide"
+                  >
+                    {cohortOptions.map((option) => (
+                      <Checkbox key={option.value} value={option.value}>
+                        {option.label}
+                      </Checkbox>
+                    ))}
+                  </Checkbox.Group>
                 )}
               </div>
-              <span className="auto-gen-modal__panel-actions">
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={() => setSelectedCohortIds(cohortOptions.map((item) => item.value))}
-                  disabled={cohortOptions.length === 0}
-                >
-                  Tất cả
-                </Button>
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={() => setSelectedCohortIds([])}
-                  disabled={selectedCohortIds.length === 0}
-                >
-                  Bỏ chọn
-                </Button>
-              </span>
-            </div>
+            </section>
+          ) : null}
 
-            <div className="auto-gen-cohort-list auto-gen-cohort-list--grid">
-              {cohortOptions.length === 0 ? (
-                <span className="auto-gen-modal__empty">Chưa có niên khóa</span>
-              ) : (
-                <Checkbox.Group
-                  value={selectedCohortIds}
-                  onChange={setSelectedCohortIds}
-                  className="auto-gen-cohort-grid"
-                >
-                  {cohortOptions.map((option) => (
-                    <Checkbox key={option.value} value={option.value}>
-                      {option.label}
-                    </Checkbox>
-                  ))}
-                </Checkbox.Group>
-              )}
-            </div>
-          </div>
+          <Alert
+            type="warning"
+            showIcon
+            className="auto-gen-modal__warn"
+            message={
+              waveDriven
+                ? 'Chỉ thay thế lớp của niên khóa thuộc đợt đã chọn'
+                : 'Lớp cũ của niên khóa đã chọn sẽ bị thay thế'
+            }
+            description={
+              waveDriven
+                ? 'Lớp trùng mã học phần từ niên khóa khác (ngoài đợt) không bị ảnh hưởng.'
+                : 'Lớp trùng mã (cùng học phần) từ niên khóa khác cũng được ghi đè.'
+            }
+          />
         </div>
       </Modal>
     </Spin>

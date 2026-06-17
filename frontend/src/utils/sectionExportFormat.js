@@ -1,6 +1,11 @@
 import { normalizeDeliveryChannel, DELIVERY_CHANNELS } from '../constants/deliveryChannels'
 import { normalizeLearningType } from '../constants/learningModes'
-import { parseSectionGroupCode, isCourseraBaseGroupCode, isCourseraPracticeGroupCode } from './sectionClassType'
+import {
+  parseSectionGroupCode,
+  isCourseraBaseGroupCode,
+  isCourseraPracticeGroupCode,
+  isPracticeGroupCode,
+} from './sectionClassType'
 
 const SECTION_ID_RE = /^(.+)\(([^)]+)\)$/
 
@@ -44,7 +49,9 @@ export function isAsyncOnlineExportSection(section) {
   if (!section) return false
 
   const groupCode = parseSectionGroupCode(section.section_id)
-  if (isCourseraPracticeGroupCode(groupCode)) return false
+  if (isCourseraPracticeGroupCode(groupCode) || isPracticeGroupCode(groupCode)) {
+    return false
+  }
 
   if (normalizeLearningType(section.room_type_req) === 'ONLINE') {
     return true
@@ -64,11 +71,8 @@ export function isAsyncOnlineExportSection(section) {
       || /^ELN\d+$/i.test(groupCode)
   }
 
-  if (channel === DELIVERY_CHANNELS.COURSERA && isCourseraBaseGroupCode(groupCode)) {
-    return true
-  }
-
-  if (channel === DELIVERY_CHANNELS.HYBRID && /^ELN\d+$/i.test(groupCode)) {
+  if (channel === DELIVERY_CHANNELS.COURSERA
+    && (isCourseraBaseGroupCode(groupCode) || /^ELN\d+$/i.test(groupCode))) {
     return true
   }
 
@@ -81,15 +85,17 @@ export function resolveExportGroupSortKey(sectionId) {
   const dotIndex = exportCode.indexOf('.')
 
   if (dotIndex === -1) {
-    return { base: exportCode, tier: 0, suffix: '' }
+    return { base: exportCode, tier: 0, suffix: '', suffixOrder: null }
   }
 
   const suffix = exportCode.slice(dotIndex + 1)
   const tier = suffix === 'ELN0' ? 0 : 1
+  const thMatch = suffix.match(/^TH(\d+)$/i)
 
   return {
     base: exportCode.slice(0, dotIndex),
     tier,
     suffix,
+    suffixOrder: thMatch ? Number(thMatch[1]) : null,
   }
 }

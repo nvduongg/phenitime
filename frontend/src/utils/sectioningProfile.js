@@ -109,8 +109,8 @@ export function resolveCourseSectioningProfile(course = {}) {
     primaryClassType = 'LT'
   }
 
-  const isSplitDelivery = deliveryChannel === DELIVERY_CHANNELS.HYBRID
-    || deliveryChannel === DELIVERY_CHANNELS.COURSERA
+  const isSplitDelivery = deliveryChannel === DELIVERY_CHANNELS.COURSERA
+    || deliveryChannel === DELIVERY_CHANNELS.ELEARNING
 
   return {
     templateCode,

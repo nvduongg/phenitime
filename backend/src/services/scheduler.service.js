@@ -1,11 +1,5 @@
 const { DEFAULT_SCHEDULING_CONFIG } = require('./system-config.service');
 const {
-    buildSchedulingEventsFromParams,
-    resolveSectionScheduleParams,
-    calculateIntegratedScheduleParams,
-} = require('../utils/periodCalculator');
-const { buildRhythmOptionsFromConfig } = require('../utils/scheduleRhythm');
-const {
     requiresSchedulingForCourse,
     requiresSchedulingForSection,
     normalizeLearningType,
@@ -14,7 +8,12 @@ const {
     resolveSectionClassType,
     resolveSectionRoomTypeReq,
 } = require('../utils/sectionClassType');
-const { resolveCourseSectioningProfile } = require('../utils/sectioningTemplates');
+const { resolveSectionSchedulingEvents } = require('../utils/sectionSchedulingEvents');
+const {
+    resolveSchedulingWave,
+    loadExistingOccupancy,
+    applyWaveWeekOffset,
+} = require('../utils/schedulerWaveContext');
 
 const VIRTUAL_ROOM_ID_PATTERN = /^(ONLINE|MsTeam|ELN|MSTEAM)/i
 
@@ -66,14 +65,12 @@ function buildSchedulerEvents(
     schedulingConfig = DEFAULT_SCHEDULING_CONFIG,
 ) {
     const blockSize = Number(shiftDuration) || DEFAULT_SCHEDULING_CONFIG.shift_duration;
-    const rhythmOptions = buildRhythmOptionsFromConfig(schedulingConfig);
     const events = [];
 
     for (const section of sections) {
         const course = section.course || {};
         const classType = resolveSectionClassType(section);
         const schedulingSection = { ...section, class_type: classType };
-        const profile = resolveCourseSectioningProfile(course);
 
         if (shouldSkipSchedulingSection(schedulingSection)) {
             continue;
@@ -83,24 +80,11 @@ function buildSchedulerEvents(
             continue;
         }
 
-        const scheduleParams = profile.combinedLtTh
-            ? calculateIntegratedScheduleParams(course, rhythmOptions.maxWeeks, blockSize)
-            : resolveSectionScheduleParams(
-                course,
-                classType,
-                blockSize,
-                rhythmOptions.maxWeeks,
-            );
-
-        if (!scheduleParams?.numShifts) {
-            continue;
-        }
-
-        const schedulingEvents = buildSchedulingEventsFromParams(
+        const {
+            events: schedulingEvents,
             scheduleParams,
-            blockSize,
-            rhythmOptions,
-        );
+        } = resolveSectionSchedulingEvents(schedulingSection, schedulingConfig);
+
         if (!schedulingEvents.length) {
             continue;
         }
@@ -121,7 +105,7 @@ function buildSchedulerEvents(
                 lecturer_id: section.lecturer_id || null,
                 class_type: classType,
                 duration: session.duration ?? blockSize,
-                weekly_periods: session.weekly_periods ?? scheduleParams.stPerWeek,
+                weekly_periods: session.weekly_periods ?? scheduleParams?.stPerWeek,
                 event_part: part,
                 week_from: session.week_from ?? null,
                 week_to: session.week_to ?? null,
@@ -171,7 +155,15 @@ async function buildSolvePayload(prisma, semesterId, config = {}, options = {}) 
         ...DEFAULT_SCHEDULING_CONFIG,
         ...config,
     };
-    const cohortIds = normalizeCohortIds(options.cohort_ids);
+    const cohortIdsFromOptions = normalizeCohortIds(options.cohort_ids);
+    const wave = await resolveSchedulingWave(prisma, semesterId, {
+        waveId: options.wave_id,
+        cohortIds: cohortIdsFromOptions,
+    });
+    const cohortIds = normalizeCohortIds(
+        wave?.cohort_ids?.length ? wave.cohort_ids : cohortIdsFromOptions,
+    );
+    const waveStartWeek = wave?.start_week || 1;
     const shiftDuration = Number(mergedConfig.shift_duration) || DEFAULT_SCHEDULING_CONFIG.shift_duration;
     const preflight = await getSolverPreflight(prisma, semesterId);
 
@@ -205,7 +197,15 @@ async function buildSolvePayload(prisma, semesterId, config = {}, options = {}) 
         );
     }
 
-    const events = buildSchedulerEvents(sections, shiftDuration, mergedConfig);
+    if (wave && waveStartWeek > 1) {
+        console.log(
+            `[scheduler.service] Wave ${wave.wave_name || wave.wave_order} `
+            + `(start week ${waveStartWeek}) for cohort(s) ${cohortIds.join(', ')}.`,
+        );
+    }
+
+    let events = buildSchedulerEvents(sections, shiftDuration, mergedConfig);
+    events = applyWaveWeekOffset(events, waveStartWeek);
 
     if (events.length === 0) {
         throw new Error(
@@ -213,6 +213,13 @@ async function buildSolvePayload(prisma, semesterId, config = {}, options = {}) 
             + 'Check course credits, class types, and section metadata.',
         );
     }
+
+    const scopedSectionIds = sections.map((section) => section.section_id);
+    const existingOccupancy = await loadExistingOccupancy(
+        prisma,
+        semesterId,
+        scopedSectionIds,
+    );
 
     const multiSessionSections = new Set(
         events.map((event) => event.section_id),
@@ -227,8 +234,11 @@ async function buildSolvePayload(prisma, semesterId, config = {}, options = {}) 
 
     return {
         semester_id: semesterId,
+        wave_id: wave?.wave_id || null,
+        wave_order: wave?.wave_order || null,
+        wave_start_week: waveStartWeek,
         cohort_ids: cohortIds,
-        scoped_section_ids: sections.map((section) => section.section_id),
+        scoped_section_ids: scopedSectionIds,
         config: {
             shift_duration: shiftDuration,
             max_lecturer_shifts_per_day:
@@ -244,6 +254,8 @@ async function buildSolvePayload(prisma, semesterId, config = {}, options = {}) 
             lns_max_iterations: Number(config.lns_max_iterations) || 3,
             lns_max_neighborhood: Number(config.lns_max_neighborhood) || 40,
             lns_max_time_seconds: Number(config.lns_max_time_seconds) || 90,
+            existing_occupancy: existingOccupancy,
+            fixed_room_per_section: config.fixed_room_per_section !== false,
         },
         persist: false,
         rooms: preflight.physicalRooms.length > 0 ? preflight.physicalRooms : preflight.rooms,

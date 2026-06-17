@@ -62,6 +62,8 @@ function MasterDataCrudPage({
   extraFilters,
   renderRowActions,
   actionColumnWidth = 120,
+  modalWidth = 560,
+  modalClassName,
 }) {
   const actionColumn = {
     title: 'Hành động',
@@ -126,7 +128,9 @@ function MasterDataCrudPage({
         okText={editingRecord ? 'Cập nhật' : 'Thêm mới'}
         cancelText="Hủy"
         destroyOnHidden
-        width={560}
+        centered
+        width={modalWidth}
+        className={modalClassName}
       >
         <Form form={form} layout="vertical">
           {typeof formContent === 'function' ? formContent(editingRecord) : formContent}

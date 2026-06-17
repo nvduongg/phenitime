@@ -42,34 +42,58 @@ export const COMBINED_ROOM_TYPES = new Set(['PM'])
 
 export const VIRTUAL_TIMETABLE_ROOM_IDS = new Set(['ONLINE', 'ONLINE_VIRTUAL'])
 
+const SKIP_ROOM_TYPE_SUFFIX = new Set(['LT', 'STD', 'STANDARD'])
+const COMPUTER_LAB_ROOM_TYPES = new Set(['PC', 'PM', 'LAB', 'TH'])
+const ROOM_ID_TYPE_MARKER_RE = /\((?:PC|PM|LT|TN|LAB|TH|STD|SB|XT|BV|DN)\)/i
+
+function roomIdAlreadyHasTypeMarker(roomId) {
+  return ROOM_ID_TYPE_MARKER_RE.test(String(roomId || ''))
+}
+
+function roomIdContainsPcMarker(roomId) {
+  const id = String(roomId || '').trim().toUpperCase()
+  if (!id) return false
+  return id.includes('(PC)') || id.startsWith('PC') || id.includes('-PC') || /\bPC\d/.test(id)
+}
+
+function shouldAppendRoomTypeSuffix(roomId, roomType) {
+  if (roomIdAlreadyHasTypeMarker(roomId)) {
+    return false
+  }
+
+  const type = String(roomType || '').trim().toUpperCase()
+  if (!type || SKIP_ROOM_TYPE_SUFFIX.has(type)) {
+    return false
+  }
+
+  const id = String(roomId || '').trim().toUpperCase()
+  if (id.includes(type)) {
+    return false
+  }
+
+  if (type === 'PM' && roomIdContainsPcMarker(roomId)) {
+    return false
+  }
+
+  if (COMPUTER_LAB_ROOM_TYPES.has(type) && roomIdContainsPcMarker(roomId)) {
+    return false
+  }
+
+  return true
+}
+
 export function isOnlineRoomType(roomType) {
   return String(roomType || '').trim().toUpperCase() === 'ONLINE'
 }
 
-import { normalizeDeliveryChannel, DELIVERY_CHANNELS } from './deliveryChannels'
 import { parseSectionGroupCode, isCourseraBaseGroupCode } from '../utils/sectionClassType'
+import { isAsyncOnlineExportSection } from '../utils/sectionExportFormat'
 
 export function isElearningSection(record) {
-  const roomType =
-    record?.room_type_req || record?.course?.default_room_type || record?.course?.room_type
-  if (isOnlineRoomType(roomType)) return true
-
-  const groupCode = parseSectionGroupCode(record?.section_id)
-  if (isCourseraBaseGroupCode(groupCode)) return true
-  if (/^ELN\d+$/i.test(groupCode)) return true
-
-  const classType = String(record?.class_type || '').toUpperCase()
-  if (['ELN', 'ELN0', 'ONLINE_ELEARNING', 'ONLINE_COURSERA', 'ELEARNING', 'COURSERA'].includes(classType)) {
-    return true
-  }
-
-  const channel = normalizeDeliveryChannel(record?.course?.class_type)
-  return channel === DELIVERY_CHANNELS.ELEARNING
-    || channel === DELIVERY_CHANNELS.COURSERA
-    || channel === DELIVERY_CHANNELS.HYBRID
+  return isAsyncOnlineExportSection(record)
 }
 
-export function formatTimetableRoom(roomId, record) {
+export function formatTimetableRoom(roomId, record, roomLookup) {
   const normalizedRoomId = String(roomId || '').trim().toUpperCase()
   if (VIRTUAL_TIMETABLE_ROOM_IDS.has(normalizedRoomId)) {
     return 'ONLINE- Elearning'
@@ -80,14 +104,21 @@ export function formatTimetableRoom(roomId, record) {
     return ''
   }
 
-  if (isElearningSection(record) && !roomId) {
-    const channel = normalizeDeliveryChannel(record?.course?.class_type)
-    if (channel === DELIVERY_CHANNELS.COURSERA && isCourseraBaseGroupCode(groupCode)) {
-      return ''
-    }
+  if (isAsyncOnlineExportSection(record) && !roomId) {
     return 'ONLINE- Elearning'
   }
-  if (!roomId) return '—'
+
+  if (!roomId) {
+    return '—'
+  }
+
+  const lookup = roomLookup instanceof Map ? roomLookup : null
+  const room = lookup?.get(roomId)
+  const roomType = String(room?.room_type || '').trim().toUpperCase()
+  if (shouldAppendRoomTypeSuffix(roomId, roomType)) {
+    return `${roomId} (${roomType})`
+  }
+
   return roomId
 }
 

@@ -1,32 +1,31 @@
 /**
- * Canonical delivery-channel taxonomy (Kênh học).
+ * Canonical delivery-channel taxonomy (Hình thức học).
  * Course.class_type stores the channel; LT/TH/ELN0 are resolved at section level.
  */
 
 const { repairGarbledClassTypeCode } = require('./courseImportRows');
 
 const DELIVERY_CHANNELS = Object.freeze({
-    FACE: 'FACE',
+    OFFLINE: 'OFFLINE',
     ELEARNING: 'ELEARNING',
     COURSERA: 'COURSERA',
-    HYBRID: 'HYBRID',
     SPECIAL: 'SPECIAL',
 });
 
 const SPECIAL_CHANNEL_CODES = new Set(['DA', 'ĐA', 'TT', 'KL', 'DN', 'BV']);
 
 const LEGACY_TO_CHANNEL = Object.freeze({
-    LT: DELIVERY_CHANNELS.FACE,
-    TH: DELIVERY_CHANNELS.FACE,
-    OFFLINE: DELIVERY_CHANNELS.FACE,
-    FACE: DELIVERY_CHANNELS.FACE,
+    LT: DELIVERY_CHANNELS.OFFLINE,
+    TH: DELIVERY_CHANNELS.OFFLINE,
+    FACE: DELIVERY_CHANNELS.OFFLINE,
+    OFFLINE: DELIVERY_CHANNELS.OFFLINE,
     ONLINE: DELIVERY_CHANNELS.ELEARNING,
     ELN: DELIVERY_CHANNELS.ELEARNING,
     ONLINE_ELEARNING: DELIVERY_CHANNELS.ELEARNING,
     ELEARNING: DELIVERY_CHANNELS.ELEARNING,
     ONLINE_COURSERA: DELIVERY_CHANNELS.COURSERA,
     COURSERA: DELIVERY_CHANNELS.COURSERA,
-    HYBRID: DELIVERY_CHANNELS.HYBRID,
+    HYBRID: DELIVERY_CHANNELS.COURSERA,
     DA: DELIVERY_CHANNELS.SPECIAL,
     'ĐA': DELIVERY_CHANNELS.SPECIAL,
     TT: DELIVERY_CHANNELS.SPECIAL,
@@ -36,13 +35,13 @@ const LEGACY_TO_CHANNEL = Object.freeze({
 });
 
 const IMPORT_ALIASES = Object.freeze({
-    'trực tiếp': DELIVERY_CHANNELS.FACE,
-    offline: DELIVERY_CHANNELS.FACE,
-    'lý thuyết': DELIVERY_CHANNELS.FACE,
-    lt: DELIVERY_CHANNELS.FACE,
-    'thực hành': DELIVERY_CHANNELS.FACE,
-    th: DELIVERY_CHANNELS.FACE,
-    face: DELIVERY_CHANNELS.FACE,
+    'trực tiếp': DELIVERY_CHANNELS.OFFLINE,
+    offline: DELIVERY_CHANNELS.OFFLINE,
+    'lý thuyết': DELIVERY_CHANNELS.OFFLINE,
+    lt: DELIVERY_CHANNELS.OFFLINE,
+    'thực hành': DELIVERY_CHANNELS.OFFLINE,
+    th: DELIVERY_CHANNELS.OFFLINE,
+    face: DELIVERY_CHANNELS.OFFLINE,
     'e-learning': DELIVERY_CHANNELS.ELEARNING,
     elearning: DELIVERY_CHANNELS.ELEARNING,
     online_elearning: DELIVERY_CHANNELS.ELEARNING,
@@ -52,8 +51,8 @@ const IMPORT_ALIASES = Object.freeze({
     online: DELIVERY_CHANNELS.ELEARNING,
     coursera: DELIVERY_CHANNELS.COURSERA,
     online_coursera: DELIVERY_CHANNELS.COURSERA,
-    'kết hợp': DELIVERY_CHANNELS.HYBRID,
-    hybrid: DELIVERY_CHANNELS.HYBRID,
+    'kết hợp': DELIVERY_CHANNELS.COURSERA,
+    hybrid: DELIVERY_CHANNELS.COURSERA,
     'đồ án': DELIVERY_CHANNELS.SPECIAL,
     'do an': DELIVERY_CHANNELS.SPECIAL,
     da: DELIVERY_CHANNELS.SPECIAL,
@@ -75,7 +74,7 @@ const SPECIAL_COURSE_NAME_KEYWORDS = [
 
 function normalizeDeliveryChannelInput(value) {
     const raw = repairGarbledClassTypeCode(String(value ?? '').trim());
-    if (!raw || raw === '-') return DELIVERY_CHANNELS.FACE;
+    if (!raw || raw === '-') return DELIVERY_CHANNELS.OFFLINE;
     if (raw === 'ĐA') return DELIVERY_CHANNELS.SPECIAL;
 
     const lowered = raw.toLowerCase();
@@ -88,7 +87,7 @@ function normalizeDeliveryChannelInput(value) {
         return LEGACY_TO_CHANNEL[upper];
     }
 
-    return DELIVERY_CHANNELS.FACE;
+    return DELIVERY_CHANNELS.OFFLINE;
 }
 
 function resolveDeliveryChannel(course = {}) {
@@ -121,8 +120,8 @@ function isAsyncOnlineChannel(channel) {
 }
 
 function isSplitDeliveryChannel(channel) {
-    return channel === DELIVERY_CHANNELS.HYBRID
-        || channel === DELIVERY_CHANNELS.COURSERA;
+    return channel === DELIVERY_CHANNELS.COURSERA
+        || channel === DELIVERY_CHANNELS.ELEARNING;
 }
 
 function requiresPhysicalSchedule(course = {}) {
@@ -130,15 +129,13 @@ function requiresPhysicalSchedule(course = {}) {
     if (channel === DELIVERY_CHANNELS.SPECIAL) {
         return false;
     }
-    if (channel === DELIVERY_CHANNELS.FACE) {
+    if (channel === DELIVERY_CHANNELS.OFFLINE) {
         return true;
     }
-    if (channel === DELIVERY_CHANNELS.ELEARNING) {
-        return false;
-    }
-    if (channel === DELIVERY_CHANNELS.COURSERA || channel === DELIVERY_CHANNELS.HYBRID) {
-        const practiceCredits = Number(course.practice_credits ?? course.tc_th) || 0;
-        return practiceCredits > 0;
+    if (channel === DELIVERY_CHANNELS.ELEARNING
+        || channel === DELIVERY_CHANNELS.COURSERA) {
+        const { courseNeedsPhysicalOfflineSections } = require('./offlineScheduleConfig');
+        return courseNeedsPhysicalOfflineSections(course);
     }
     return true;
 }
@@ -152,7 +149,7 @@ function skipsAutoGenerateForChannel(channel) {
 }
 
 /**
- * Physical template when channel splits online + lab (HYBRID / COURSERA + TH).
+ * Physical template when channel splits online + offline (Coursera + buổi gặp mặt).
  */
 function resolvePhysicalTemplateForSplit(course = {}) {
     const { resolveCourseTemplateCode } = require('./sectioningTemplates');
@@ -189,7 +186,7 @@ function sliceCourseCredits(course, { theoryOnly = false, practiceOnly = false }
 }
 
 function resolveOnlineSectionClassType(channel) {
-    if (channel === DELIVERY_CHANNELS.COURSERA || channel === DELIVERY_CHANNELS.HYBRID) {
+    if (channel === DELIVERY_CHANNELS.COURSERA) {
         return 'ELN';
     }
     return 'ELN';

@@ -44,8 +44,8 @@ class TimetableScheduler:
     THEORY_ROOM_TYPES = LEARNING_MODES["THEORY"]
 
     THEORY_GROUP = frozenset({"LT", "STD", "STANDARD", ""})
-    PC_GROUP = frozenset({"PC", "PM", "LAB", "TH"})
-    MED_GROUP = frozenset({"MED", "TH", "TN", "VJ"})
+    COMPUTER_LAB_GROUP = frozenset({"PC", "PM", "LAB"})
+    MEDICAL_GROUP = frozenset({"MED", "BV", "VJ"})
 
     def __init__(self, df_events, df_rooms, config=None):
         self.events = df_events
@@ -128,6 +128,16 @@ class TimetableScheduler:
         self._lecturer_day_index = defaultdict(list)
         self.duration_by_event = {}
         self.event_week_window = {}
+        self.existing_occupancy = config.get("existing_occupancy") or []
+        self.fixed_room_per_section = config.get("fixed_room_per_section", True)
+        self._occupancy_period_index = defaultdict(list)
+        self._build_occupancy_period_index()
+
+        if self.existing_occupancy:
+            print(
+                f"[*] Loaded {len(self.existing_occupancy)} existing occupancy block(s) "
+                f"from prior wave timetables."
+            )
 
     @staticmethod
     def _safe_int(value, default=0):
@@ -153,10 +163,10 @@ class TimetableScheduler:
             return req == "ONLINE"
         if req in TimetableScheduler.THEORY_GROUP and r_type in TimetableScheduler.THEORY_GROUP:
             return True
-        if req in TimetableScheduler.PC_GROUP and r_type in TimetableScheduler.PC_GROUP:
-            return True
-        if req in TimetableScheduler.MED_GROUP and r_type in TimetableScheduler.MED_GROUP:
-            return True
+        if req in TimetableScheduler.COMPUTER_LAB_GROUP:
+            return r_type in TimetableScheduler.COMPUTER_LAB_GROUP
+        if req == "MED":
+            return r_type in TimetableScheduler.MEDICAL_GROUP
         return r_type == req
 
     def _ensure_virtual_room(self):
@@ -310,6 +320,77 @@ class TimetableScheduler:
             pass
         return 1, 99
 
+    @staticmethod
+    def _week_windows_overlap(w1_from, w1_to, w2_from, w2_to):
+        return w1_from <= w2_to and w2_from <= w1_to
+
+    @staticmethod
+    def _period_ranges_overlap(start_a, count_a, start_b, count_b):
+        end_a = start_a + count_a - 1
+        end_b = start_b + count_b - 1
+        return start_a <= end_b and start_b <= end_a
+
+    def _build_occupancy_period_index(self):
+        self._occupancy_period_index = defaultdict(list)
+
+        for block in self.existing_occupancy:
+            if not isinstance(block, dict):
+                continue
+
+            room_id = str(block.get("room_id") or "").strip()
+            day = self._safe_int(block.get("day_of_week"), 0)
+            start_period = self._safe_int(block.get("start_period"), 0)
+            period_count = max(self._safe_int(block.get("period_count"), 3), 1)
+            week_from = max(self._safe_int(block.get("week_from"), 1), 1)
+            week_to = max(self._safe_int(block.get("week_to"), week_from), week_from)
+
+            if not room_id or day < 2 or day > 7 or start_period <= 0:
+                continue
+
+            occupied = self._occupied_periods(
+                start_period,
+                period_count,
+                self.max_period,
+            )
+            payload = {
+                "room_id": room_id,
+                "day": day,
+                "week_from": week_from,
+                "week_to": week_to,
+            }
+            for period in occupied:
+                self._occupancy_period_index[(room_id, day, period)].append(payload)
+
+    def _blocked_by_existing_occupancy(self, event, room_id, day, shift):
+        if not self._occupancy_period_index:
+            return False
+
+        week_from, week_to = self._resolve_week_window(event)
+        duration = self._safe_int(event.get("duration"), self.session_block_size)
+        occupied = self._occupied_periods(shift, duration, self.max_period)
+
+        seen_blocks = set()
+        for period in occupied:
+            for block in self._occupancy_period_index.get((str(room_id), day, period), []):
+                block_key = (
+                    block["room_id"],
+                    block["day"],
+                    block["week_from"],
+                    block["week_to"],
+                )
+                if block_key in seen_blocks:
+                    continue
+                seen_blocks.add(block_key)
+                if self._week_windows_overlap(
+                    week_from,
+                    week_to,
+                    block["week_from"],
+                    block["week_to"],
+                ):
+                    return True
+
+        return False
+
     def _should_create_variable(self, event, room, day, shift):
         room_id = str(room["room_id"])
 
@@ -380,6 +461,7 @@ class TimetableScheduler:
             "shift_fit": 0,
             "invalid_shift": 0,
             "virtual_filter": 0,
+            "existing_occupancy": 0,
         }
 
         for _, event in self.events.iterrows():
@@ -421,6 +503,10 @@ class TimetableScheduler:
                             continue
 
                         if not self._should_create_variable(event, room, day, shift):
+                            continue
+
+                        if self._blocked_by_existing_occupancy(event, room_id, day, shift):
+                            stats["existing_occupancy"] += 1
                             continue
 
                         var_name = (
@@ -466,7 +552,8 @@ class TimetableScheduler:
         )
         print(
             "[*] DEBUG Pruning Rejections (other) -> "
-            f"Shift fit: {stats['shift_fit']}, Invalid shift: {stats['invalid_shift']}"
+            f"Shift fit: {stats['shift_fit']}, Invalid shift: {stats['invalid_shift']}, "
+            f"Existing occupancy: {stats['existing_occupancy']}"
         )
         print(
             f"[*] Created {len(self.X)} placement variables and "
@@ -544,6 +631,8 @@ class TimetableScheduler:
                 self.model.Add(sum(vars_on_day) <= max_shifts_per_day)
                 hc7_count += 1
 
+        hc8_count = self._add_fixed_room_per_section_constraints()
+
         self.model.Maximize(sum(self.is_scheduled.values()))
 
         print(f"[*] HC2 room shift conflicts (AddAtMostOne): {hc2_count}")
@@ -557,7 +646,62 @@ class TimetableScheduler:
             f"[*] HC7 lecturer fatigue constraints: {hc7_count} "
             f"(max {max_shifts_per_day} shifts/day per lecturer)."
         )
+        print(
+            f"[*] HC8 fixed room per section constraints: {hc8_count} "
+            f"(all sessions of a section share one physical room)."
+        )
         print("[*] Objective: maximize scheduled events (CP-SAT Maximize).")
+
+    def _add_fixed_room_per_section_constraints(self):
+        if not self.fixed_room_per_section:
+            return 0
+
+        hc8_count = 0
+        events_index = self.events.set_index("event_id", drop=False)
+
+        for section_id, event_ids in self.section_groups.items():
+            if len(event_ids) < 2:
+                continue
+
+            physical_event_ids = []
+            for event_id in event_ids:
+                if event_id not in events_index.index:
+                    continue
+                event_row = events_index.loc[event_id]
+                if isinstance(event_row, pd.DataFrame):
+                    event_row = event_row.iloc[0]
+                if not self._uses_virtual_room(event_row):
+                    physical_event_ids.append(event_id)
+
+            if len(physical_event_ids) < 2:
+                continue
+
+            candidate_rooms = sorted({
+                key[1]
+                for key in self.X
+                if key[0] in physical_event_ids
+            })
+            if not candidate_rooms:
+                continue
+
+            home_vars = {}
+            for room_id in candidate_rooms:
+                token = (
+                    f"{self._sanitize_var_token(section_id)}_"
+                    f"{self._sanitize_var_token(room_id)}"
+                )
+                home_vars[room_id] = self.model.NewBoolVar(f"home_{token}")
+
+            self.model.Add(sum(home_vars.values()) <= 1)
+            hc8_count += 1
+
+            for room_id, home_var in home_vars.items():
+                for event_id in physical_event_ids:
+                    for key, placement_var in self.X.items():
+                        if key[0] == event_id and key[1] == room_id:
+                            self.model.Add(placement_var <= home_var)
+
+        return hc8_count
 
     def _build_unscheduled_classes(self, unscheduled_event_ids):
         events_index = self.events.set_index("event_id")
@@ -941,6 +1085,9 @@ class TimetableScheduler:
                         if not is_virtual and room_id == self.VIRTUAL_ROOM_ID:
                             continue
 
+                        if self._blocked_by_existing_occupancy(event, room_id, day, shift):
+                            continue
+
                         var_name = (
                             f"p2_x_{self._sanitize_var_token(event_id)}_"
                             f"{self._sanitize_var_token(room_id)}_d{day}_s{shift}"
@@ -1076,6 +1223,51 @@ class TimetableScheduler:
             model2.Add(2 * cram_var <= total_parts)
             hc6_soft_count += 1
 
+        hc8_count = 0
+        if self.fixed_room_per_section:
+            events_index = self.events.set_index("event_id", drop=False)
+            section_event_map = defaultdict(list)
+            for event_id in is_scheduled2:
+                if event_id not in events_index.index:
+                    continue
+                event_row = events_index.loc[event_id]
+                if isinstance(event_row, pd.DataFrame):
+                    event_row = event_row.iloc[0]
+                if self._uses_virtual_room(event_row):
+                    continue
+                section_id = event_row.get("section_id")
+                if section_id:
+                    section_event_map[str(section_id)].append(event_id)
+
+            for section_id, section_event_ids in section_event_map.items():
+                if len(section_event_ids) < 2:
+                    continue
+
+                candidate_rooms = sorted({
+                    key[1]
+                    for key in X2
+                    if key[0] in section_event_ids
+                })
+                if not candidate_rooms:
+                    continue
+
+                home_vars = {}
+                for room_id in candidate_rooms:
+                    token = (
+                        f"{self._sanitize_var_token(section_id)}_"
+                        f"{self._sanitize_var_token(room_id)}"
+                    )
+                    home_vars[room_id] = model2.NewBoolVar(f"p2_home_{token}")
+
+                model2.Add(sum(home_vars.values()) <= 1)
+                hc8_count += 1
+
+                for room_id, home_var in home_vars.items():
+                    for event_id in section_event_ids:
+                        for key, placement_var in X2.items():
+                            if key[0] == event_id and key[1] == room_id:
+                                model2.Add(placement_var <= home_var)
+
         objective_terms = [
             self.REWARD_SCHEDULED * is_sched_var
             for is_sched_var in is_scheduled2.values()
@@ -1096,6 +1288,7 @@ class TimetableScheduler:
         print(f"[*] {log_prefix} HC4 student group AddAtMostOne groups: {hc4_count}")
         print(f"[*] {log_prefix} soft HC6 (crammed) groups: {hc6_soft_count}")
         print(f"[*] {log_prefix} soft HC7 (fatigue) groups: {hc7_soft_count}")
+        print(f"[*] {log_prefix} HC8 fixed room per section groups: {hc8_count}")
         print(
             f"[*] {log_prefix} penalties: overcrowded={len(is_overcrowded)}, "
             f"fatigued={len(is_fatigued)}, crammed={len(is_crammed)}"

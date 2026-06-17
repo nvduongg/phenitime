@@ -10,6 +10,7 @@ const { loadMajorLookups } = require('../utils/majorResolver');
 const { resolveMajorIdForInsert, applyMajorIdRenames } = require('../utils/majorIdAssignment');
 const { resolveCourseTemplateCode } = require('../utils/sectioningTemplates');
 const { syncCourseCreditFields } = require('../utils/periodCalculator');
+const { syncCourseOfflineFields } = require('../utils/offlineScheduleConfig');
 const { getCourseDefaultRoomType } = require('../constants/roomTypes');
 const { normalizeUnitId, resolveImportUnitId, buildLegacyUnitErrorMessage } = require('../utils/unitResolver');
 const {
@@ -348,7 +349,7 @@ exports.importCourses = async (req, res) => {
                 return;
             }
 
-            coursesToInsert.push(syncCourseCreditFields({
+            coursesToInsert.push(syncCourseOfflineFields(syncCourseCreditFields({
                 course_id: courseId,
                 course_name: courseName,
                 credits: pickImportNumber(
@@ -377,7 +378,34 @@ exports.importCourses = async (req, res) => {
                 default_room_type: roomType,
                 template_code: templateCode,
                 unit_id: unitResolution.unitId,
-            }));
+                offline_session_count: pickImportNumber(
+                    row,
+                    COURSE_IMPORT_COLUMN.offline_session_count,
+                    pickRowValue,
+                    ['Số buổi offline', 'Buổi offline', 'offline_session_count'],
+                    null,
+                ),
+                offline_periods_per_session: pickImportNumber(
+                    row,
+                    COURSE_IMPORT_COLUMN.offline_periods_per_session,
+                    pickRowValue,
+                    ['Tiết/buổi offline', 'offline_periods_per_session'],
+                    null,
+                ),
+                offline_week_rhythm: pickImportCell(row, COURSE_IMPORT_COLUMN.offline_week_rhythm, pickRowValue, [
+                    'Nhịp tuần offline', 'offline_week_rhythm',
+                ]),
+                offline_week_interval: pickImportNumber(
+                    row,
+                    COURSE_IMPORT_COLUMN.offline_week_interval,
+                    pickRowValue,
+                    ['Cách N tuần', 'offline_week_interval'],
+                    null,
+                ),
+                offline_active_weeks: pickImportCell(row, COURSE_IMPORT_COLUMN.offline_active_weeks, pickRowValue, [
+                    'Tuần offline', 'offline_active_weeks',
+                ]),
+            })));
         });
 
         if (legacyUnitCodes.length) {

@@ -56,8 +56,24 @@ model Semester {
   created_at    DateTime? @default(now())
 
   sections   CourseSection[]
+  waves      SemesterWave[]
 
   @@map("semesters")
+}
+
+// Đợt trong học kỳ (giao nhau niên khóa — K16-K17 đợt 1, K18 đợt 2 +5 tuần, …)
+model SemesterWave {
+  wave_id      String   @id @db.VarChar(80)
+  semester_id  String   @db.VarChar(50)
+  wave_order   Int
+  wave_name    String?  @db.VarChar(100)
+  start_week   Int      @default(1)
+  cohort_ids   String[]
+
+  semester     Semester @relation(fields: [semester_id], references: [semester_id], onDelete: Cascade)
+
+  @@unique([semester_id, wave_order])
+  @@map("semester_waves")
 }
 
 // ==========================================
@@ -77,6 +93,11 @@ model Course {
   room_type        String   @default("LT") @db.VarChar(50)  // Loại phòng / địa điểm học (LT, PM, TN, SB, XT, BV, DN, ONLINE)
   default_room_type String  @default("LT") @db.VarChar(50) // Loại phòng mặc định khi sinh lớp tự động
   template_code    String  @default("STANDARD") @db.VarChar(50) // Mẫu sinh lớp: STANDARD, LAB_COUPLED, ONLINE, MEDICAL_CLINIC
+  offline_session_count       Int?    // Số buổi offline cần xếp phòng (Coursera/Hybrid/TH thủ công)
+  offline_periods_per_session Int?    @default(3) // Tiết mỗi buổi offline
+  offline_week_rhythm         String? @db.VarChar(30) // WEEKLY | BIWEEKLY | EVERY_N | CUSTOM
+  offline_week_interval       Int?    // Chu kỳ tuần khi EVERY_N (VD: 2 = cách 2 tuần)
+  offline_active_weeks        String? @db.VarChar(200) // Tuần cụ thể: "1,3,5,9"
   unit_id          String   @db.VarChar(50) // Khoa quản lý học phần này
   created_at       DateTime? @default(now())
 
@@ -225,7 +246,7 @@ model CourseSection {
   duration_weeks Int?                      // Số tuần hoàn thành môn
 
   course      Course    @relation(fields: [course_id], references: [course_id])
-  semester    Semester  @relation(fields: [semester_id], references: [semester_id])
+  semester    Semester  @relation(fields: [semester_id], references: [semester_id], onDelete: Cascade)
   lecturer    Lecturer? @relation(fields: [lecturer_id], references: [lecturer_id])
   
   // Prisma tự động tạo bảng trung gian (Pivot table) cho quan hệ N-N này

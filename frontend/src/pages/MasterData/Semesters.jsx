@@ -1,20 +1,39 @@
 import dayjs from 'dayjs'
-import { useState } from 'react'
-import { DatePicker, Form, Input, Switch, Tag, message } from 'antd'
+import { useEffect, useState } from 'react'
+import { DatePicker, Form, Input, Switch, Tag, Button, Typography, message } from 'antd'
+import { CalendarOutlined } from '@ant-design/icons'
 import MasterDataCrudPage from '../../components/Common/MasterDataCrudPage'
+import SemesterWavesModal from './SemesterWavesModal'
 import { useAppContext } from '../../contexts/AppContext'
 import { useCrudPage } from '../../hooks/useCrudPage'
 import {
   createSemester,
   deleteSemester,
   getSemesters,
+  getSchedulingSettings,
   updateSemester,
 } from '../../services/api'
 import { formatDate } from '../../utils/formatters'
+import {
+  DEFAULT_TEACHING_WEEKS,
+  formatSemesterEndPreview,
+} from '../../utils/semesterDates'
 
 function Semesters() {
   const { refreshSemesters } = useAppContext()
   const [togglingId, setTogglingId] = useState(null)
+  const [wavesModalOpen, setWavesModalOpen] = useState(false)
+  const [wavesSemester, setWavesSemester] = useState(null)
+  const [teachingWeeks, setTeachingWeeks] = useState(DEFAULT_TEACHING_WEEKS)
+
+  useEffect(() => {
+    getSchedulingSettings()
+      .then((result) => {
+        const weeks = Number(result.data?.max_teaching_weeks)
+        if (weeks > 0) setTeachingWeeks(weeks)
+      })
+      .catch(() => {})
+  }, [])
 
   const crud = useCrudPage({
     listFn: getSemesters,
@@ -28,7 +47,6 @@ function Semesters() {
         semester_name: values.semester_name,
         academic_year: values.academic_year,
         start_date: values.start_date?.format('YYYY-MM-DD'),
-        end_date: values.end_date?.format('YYYY-MM-DD'),
       }
 
       if (!editingRecord) {
@@ -43,8 +61,16 @@ function Semesters() {
     crud.openEdit({
       ...record,
       start_date: record.start_date ? dayjs(record.start_date) : null,
-      end_date: record.end_date ? dayjs(record.end_date) : null,
     })
+  }
+
+  const closeWavesModal = (saved) => {
+    setWavesModalOpen(false)
+    setWavesSemester(null)
+    if (saved) {
+      crud.fetchData()
+      refreshSemesters()
+    }
   }
 
   const handleToggleActive = async (record, checked) => {
@@ -58,6 +84,11 @@ function Semesters() {
     } finally {
       setTogglingId(null)
     }
+  }
+
+  const openWavesModal = (record) => {
+    setWavesSemester(record)
+    setWavesModalOpen(true)
   }
 
   const columns = [
@@ -118,28 +149,39 @@ function Semesters() {
   ]
 
   return (
-    <MasterDataCrudPage
-      title="Học kỳ"
-      subtitle="Quản lý danh sách học kỳ và niên khóa"
-      rowKey="semester_id"
-      columns={columns}
-      dataSource={crud.data}
-      loading={crud.loading}
-      submitting={crud.submitting}
-      modalOpen={crud.modalOpen}
-      editingRecord={crud.editingRecord}
-      searchText={crud.searchText}
-      onSearchChange={crud.setSearchText}
-      onCreate={crud.openCreate}
-      onEdit={openEdit}
-      onDelete={crud.handleDelete}
-      onCloseModal={crud.closeModal}
-      onSubmit={crud.handleSubmit}
-      modalTitleCreate="Thêm học kỳ mới"
-      modalTitleEdit="Cập nhật học kỳ"
-      form={crud.form}
-      scrollX={1100}
-      formContent={(editingRecord) => (
+    <>
+      <MasterDataCrudPage
+        title="Học kỳ"
+        subtitle="Quản lý danh sách học kỳ và niên khóa"
+        rowKey="semester_id"
+        columns={columns}
+        dataSource={crud.data}
+        loading={crud.loading}
+        submitting={crud.submitting}
+        modalOpen={crud.modalOpen}
+        editingRecord={crud.editingRecord}
+        searchText={crud.searchText}
+        onSearchChange={crud.setSearchText}
+        onCreate={crud.openCreate}
+        onEdit={openEdit}
+        onDelete={crud.handleDelete}
+        onCloseModal={crud.closeModal}
+        onSubmit={crud.handleSubmit}
+        modalTitleCreate="Thêm học kỳ mới"
+        modalTitleEdit="Cập nhật học kỳ"
+        form={crud.form}
+        scrollX={1100}
+        actionColumnWidth={160}
+        renderRowActions={(record) => (
+          <Button
+            type="text"
+            size="middle"
+            icon={<CalendarOutlined />}
+            onClick={() => openWavesModal(record)}
+            title="Cấu hình đợt xếp lịch"
+          />
+        )}
+        formContent={(editingRecord) => (
         <>
           <Form.Item
             name="semester_id"
@@ -164,21 +206,32 @@ function Semesters() {
           </Form.Item>
           <Form.Item
             name="start_date"
-            label="Ngày bắt đầu"
+            label="Ngày bắt đầu (Tuần 1 HK)"
             rules={[{ required: true, message: 'Vui lòng chọn ngày bắt đầu' }]}
           >
             <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
           </Form.Item>
-          <Form.Item
-            name="end_date"
-            label="Ngày kết thúc"
-            rules={[{ required: true, message: 'Vui lòng chọn ngày kết thúc' }]}
-          >
-            <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
+          <Form.Item shouldUpdate noStyle>
+            {() => {
+              const startDate = crud.form.getFieldValue('start_date')
+              const preview = formatSemesterEndPreview(startDate, { teachingWeeks })
+              return (
+                <Typography.Paragraph type="secondary" style={{ marginTop: -8, marginBottom: 16 }}>
+                  Ngày kết thúc (tự tính, {teachingWeeks} tuần dạy / đợt 1): <strong>{preview}</strong>
+                  . Sau khi cấu hình đợt (VD: K19 tuần 11), ngày KT sẽ được kéo dài tự động.
+                </Typography.Paragraph>
+              )
+            }}
           </Form.Item>
         </>
       )}
-    />
+      />
+      <SemesterWavesModal
+        open={wavesModalOpen}
+        semester={wavesSemester}
+        onClose={closeWavesModal}
+      />
+    </>
   )
 }
 

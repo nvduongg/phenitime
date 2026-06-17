@@ -10,6 +10,11 @@ const COURSE_IMPORT_COLUMN = {
     room_type: 6,
     template_code: 7,
     unit_id: 8,
+    offline_session_count: 9,
+    offline_periods_per_session: 10,
+    offline_week_rhythm: 11,
+    offline_week_interval: 12,
+    offline_active_weeks: 13,
 };
 
 function normalizeHeaderKey(header) {

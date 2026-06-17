@@ -1,18 +1,19 @@
 export const DELIVERY_CHANNELS = {
-  FACE: 'FACE',
+  OFFLINE: 'OFFLINE',
   ELEARNING: 'ELEARNING',
   COURSERA: 'COURSERA',
-  HYBRID: 'HYBRID',
   SPECIAL: 'SPECIAL',
 }
 
 const LEGACY_TO_CHANNEL = {
-  LT: DELIVERY_CHANNELS.FACE,
-  TH: DELIVERY_CHANNELS.FACE,
-  OFFLINE: DELIVERY_CHANNELS.FACE,
+  LT: DELIVERY_CHANNELS.OFFLINE,
+  TH: DELIVERY_CHANNELS.OFFLINE,
+  FACE: DELIVERY_CHANNELS.OFFLINE,
+  OFFLINE: DELIVERY_CHANNELS.OFFLINE,
   ONLINE: DELIVERY_CHANNELS.ELEARNING,
   ELN: DELIVERY_CHANNELS.ELEARNING,
   COUR: DELIVERY_CHANNELS.COURSERA,
+  HYBRID: DELIVERY_CHANNELS.COURSERA,
   ONLINE_ELEARNING: DELIVERY_CHANNELS.ELEARNING,
   ONLINE_COURSERA: DELIVERY_CHANNELS.COURSERA,
   DA: DELIVERY_CHANNELS.SPECIAL,
@@ -22,35 +23,36 @@ const LEGACY_TO_CHANNEL = {
 }
 
 export const DELIVERY_CHANNEL_LABELS = {
+  OFFLINE: 'Trực tiếp',
   FACE: 'Trực tiếp',
   ELEARNING: 'E-learning',
   COURSERA: 'Coursera',
-  HYBRID: 'Kết hợp (online + phòng thực hành)',
-  SPECIAL: 'Đồ án / Thực tập / Khóa luận',
+  HYBRID: 'Coursera',
+  SPECIAL: 'ĐA/TT/KL',
 }
 
 export const DELIVERY_CHANNEL_COLORS = {
+  OFFLINE: 'geekblue',
   FACE: 'geekblue',
   ELEARNING: 'purple',
   COURSERA: 'magenta',
-  HYBRID: 'gold',
+  HYBRID: 'magenta',
   SPECIAL: 'orange',
 }
 
 export const DELIVERY_CHANNEL_OPTIONS = [
-  { value: DELIVERY_CHANNELS.FACE, label: 'Trực tiếp (FACE)' },
+  { value: DELIVERY_CHANNELS.OFFLINE, label: 'Trực tiếp (OFFLINE)' },
   { value: DELIVERY_CHANNELS.ELEARNING, label: 'E-learning (ELEARNING)' },
   { value: DELIVERY_CHANNELS.COURSERA, label: 'Coursera (COURSERA)' },
-  { value: DELIVERY_CHANNELS.HYBRID, label: 'Kết hợp online + lab (HYBRID)' },
-  { value: DELIVERY_CHANNELS.SPECIAL, label: 'Đồ án / TT / KL (SPECIAL)' },
+  { value: DELIVERY_CHANNELS.SPECIAL, label: 'ĐA/TT/KL (SPECIAL)' },
 ]
 
 export function normalizeDeliveryChannel(value) {
   const raw = String(value ?? '').trim().toUpperCase()
-  if (!raw) return DELIVERY_CHANNELS.FACE
+  if (!raw) return DELIVERY_CHANNELS.OFFLINE
   if (LEGACY_TO_CHANNEL[raw]) return LEGACY_TO_CHANNEL[raw]
   if (Object.values(DELIVERY_CHANNELS).includes(raw)) return raw
-  return DELIVERY_CHANNELS.FACE
+  return DELIVERY_CHANNELS.OFFLINE
 }
 
 export function formatDeliveryChannel(value) {
@@ -71,10 +73,8 @@ export const CLASS_TYPE_LABELS = {
   ELN: 'E-learning (ELN)',
   ELN0: 'E-learning (ELN)',
   COUR: 'Coursera (COUR)',
-  OFFLINE: 'Trực tiếp',
   ONLINE_ELEARNING: 'E-learning',
   ONLINE_COURSERA: 'Coursera',
-  HYBRID: 'Kết hợp',
   'ĐA': 'Đồ án',
   TT: 'Thực tập',
 }

@@ -25,6 +25,7 @@ import {
   Table,
   Tag,
   Tooltip,
+  Dropdown,
   message,
 } from 'antd'
 import PageHeader from '../../components/Common/PageHeader'
@@ -34,7 +35,7 @@ import TimetableDropConfirmModal from '../../components/Timetable/TimetableDropC
 import { useAppContext } from '../../contexts/AppContext'
 import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
 import { buildTimetableExportColumns } from '../../config/exportColumns'
-import { prepareTimetablesForExport, sectionMatchesCohortFilter } from '../../utils/exportFormatters'
+import { prepareTimetablesForExport, sectionMatchesCohortFilter, sortTimetablesForDisplay } from '../../utils/exportFormatters'
 import {
   buildFilterOptions,
   filterGridEvents,
@@ -56,6 +57,7 @@ import {
   getCohorts,
   getCourseSections,
   getRooms,
+  getSemesterWaves,
   getTimetables,
   updateTimetable,
 } from '../../services/api'
@@ -84,6 +86,9 @@ function Timetables() {
   const [rooms, setRooms] = useState([])
   const [cohortOptions, setCohortOptions] = useState([])
   const [cohortFilter, setCohortFilterState] = useState(() => loadCohortFilter())
+  const [semesterWaves, setSemesterWaves] = useState([])
+  const [waveFilter, setWaveFilter] = useState(null)
+  const [loadingWaves, setLoadingWaves] = useState(false)
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -107,6 +112,18 @@ function Timetables() {
 
   const effectiveSemesterFilter =
     semesterFilter !== undefined ? semesterFilter : activeSemesterId
+
+  const selectedWave = useMemo(
+    () => semesterWaves.find((wave) => wave.wave_id === waveFilter) || null,
+    [semesterWaves, waveFilter],
+  )
+
+  const effectiveCohortIds = useMemo(() => {
+    if (selectedWave?.cohort_ids?.length) {
+      return selectedWave.cohort_ids
+    }
+    return cohortFilter
+  }, [selectedWave, cohortFilter])
 
   const setCohortFilter = useCallback((value) => {
     setCohortFilterState((prev) => {
@@ -170,6 +187,41 @@ function Timetables() {
   }, [location.pathname])
 
   useEffect(() => {
+    if (!effectiveSemesterFilter) {
+      setSemesterWaves([])
+      setWaveFilter(null)
+      return
+    }
+
+    setLoadingWaves(true)
+    getSemesterWaves(effectiveSemesterFilter)
+      .then((result) => {
+        setSemesterWaves(result.data || [])
+      })
+      .catch(() => {
+        setSemesterWaves([])
+      })
+      .finally(() => setLoadingWaves(false))
+  }, [effectiveSemesterFilter])
+
+  useEffect(() => {
+    if (!semesterWaves.length) {
+      setWaveFilter(null)
+      return
+    }
+    if (semesterWaves.length === 1) {
+      setWaveFilter(semesterWaves[0].wave_id)
+      return
+    }
+    setWaveFilter((current) => {
+      if (current && semesterWaves.some((wave) => wave.wave_id === current)) {
+        return current
+      }
+      return null
+    })
+  }, [semesterWaves])
+
+  useEffect(() => {
     const stored = loadSchedulerResult()
     if (!stored?.unscheduled_classes?.length) {
       setUnscheduledClasses([])
@@ -186,7 +238,7 @@ function Timetables() {
     }
 
     setUnscheduledClasses(stored.unscheduled_classes.filter((item) => {
-      const activeCohorts = cohortFilter.length ? cohortFilter : stored.cohort_ids
+      const activeCohorts = effectiveCohortIds.length ? effectiveCohortIds : stored.cohort_ids
       if (!activeCohorts?.length) {
         return true
       }
@@ -196,7 +248,7 @@ function Timetables() {
     if (stored.unscheduled_classes.length > 0) {
       setViewMode((current) => (current === 'table' ? 'grid' : current))
     }
-  }, [effectiveSemesterFilter, cohortFilter, sections])
+  }, [effectiveSemesterFilter, effectiveCohortIds, sections])
 
   useEffect(() => {
     Promise.all([getCourseSections(), getRooms()])
@@ -239,9 +291,9 @@ function Timetables() {
           (effectiveSemesterFilter
             ? section.semester_id === effectiveSemesterFilter
             : true)
-          && sectionMatchesCohortFilter(section, cohortFilter),
+          && sectionMatchesCohortFilter(section, effectiveCohortIds),
       ),
-    [sections, effectiveSemesterFilter, cohortFilter],
+    [sections, effectiveSemesterFilter, effectiveCohortIds],
   )
 
   const sectionOptions = useMemo(
@@ -281,6 +333,15 @@ function Timetables() {
     return days.map((day) => ({ value: day, label: formatDayOfWeek(day) }))
   }, [timetables])
 
+  const waveOptions = useMemo(
+    () =>
+      semesterWaves.map((wave) => ({
+        value: wave.wave_id,
+        label: `${wave.wave_name || `Đợt ${wave.wave_order}`} — tuần ${wave.start_week} (${(wave.cohort_ids || []).join(', ')})`,
+      })),
+    [semesterWaves],
+  )
+
   const semesterTimetables = useMemo(() => {
     return timetables.filter((item) => {
       const matchSemester = effectiveSemesterFilter
@@ -289,13 +350,13 @@ function Timetables() {
       if (!matchSemester) {
         return false
       }
-      if (!cohortFilter.length) {
+      if (!effectiveCohortIds.length) {
         return true
       }
       const section = item.section || sectionLookup.get(item.section_id)
-      return sectionMatchesCohortFilter(section, cohortFilter)
+      return sectionMatchesCohortFilter(section, effectiveCohortIds)
     })
-  }, [timetables, effectiveSemesterFilter, cohortFilter, sectionLookup])
+  }, [timetables, effectiveSemesterFilter, effectiveCohortIds, sectionLookup])
 
   const filteredTimetables = useMemo(() => {
     return semesterTimetables.filter((item) => {
@@ -304,6 +365,11 @@ function Timetables() {
       return matchRoom && matchDay
     })
   }, [semesterTimetables, roomFilter, dayFilter])
+
+  const displayTimetables = useMemo(
+    () => sortTimetablesForDisplay(filteredTimetables, sectionLookup),
+    [filteredTimetables, sectionLookup],
+  )
 
   const gridBaseEvents = useMemo(
     () => semesterTimetables.map(normalizeGridEvent),
@@ -316,14 +382,14 @@ function Timetables() {
   )
 
   const cohortUnscheduledClasses = useMemo(() => {
-    if (!cohortFilter.length) {
+    if (!effectiveCohortIds.length) {
       return unscheduledClasses
     }
     return unscheduledClasses.filter((item) => {
       const section = sectionLookup.get(item.section_id)
-      return sectionMatchesCohortFilter(section, cohortFilter)
+      return sectionMatchesCohortFilter(section, effectiveCohortIds)
     })
-  }, [unscheduledClasses, cohortFilter, sectionLookup])
+  }, [unscheduledClasses, effectiveCohortIds, sectionLookup])
 
   const filteredUnscheduledClasses = useMemo(() => {
     if (!gridCourseFilter) return cohortUnscheduledClasses
@@ -390,6 +456,11 @@ function Timetables() {
   const semesterLookup = useMemo(
     () => new Map(semesters.map((semester) => [semester.semester_id, semester])),
     [semesters],
+  )
+
+  const roomLookup = useMemo(
+    () => new Map(rooms.map((room) => [room.room_id, room])),
+    [rooms],
   )
 
   const activeSemester = useMemo(
@@ -499,6 +570,7 @@ function Timetables() {
       day: dropTarget.day,
       startPeriod: dropTarget.startPeriod,
       semester: activeSemester,
+      waves: semesterWaves,
     })
 
     if (!payload.start_date || !payload.end_date) {
@@ -546,34 +618,172 @@ function Timetables() {
   }
 
   const exportColumns = useMemo(
-    () => buildTimetableExportColumns({ sectionLookup }),
-    [sectionLookup],
+    () => buildTimetableExportColumns({ sectionLookup, semesterLookup, roomLookup }),
+    [sectionLookup, semesterLookup, roomLookup],
   )
 
-  const handleExport = () => {
+  const buildExportSuffix = useCallback((wave, cohortIds = []) => {
+    if (wave) {
+      const cohortPart = (wave.cohort_ids || []).join('-') || 'cohort'
+      return `Dot${wave.wave_order}-${cohortPart}`
+    }
+    if (cohortIds.length) {
+      return cohortIds.join('-')
+    }
+    return 'Tat-ca'
+  }, [])
+
+  const resolveUnscheduledForExport = useCallback((cohortIds, explicitList = []) => {
+    const byKey = new Map()
+    const addItem = (item) => {
+      if (!item?.section_id && !item?.event_id) return
+      const key = item.event_id || item.section_id
+      byKey.set(key, item)
+    }
+
+    explicitList.forEach(addItem)
+
+    const stored = loadSchedulerResult()
+    if (
+      stored?.unscheduled_classes?.length
+      && (!effectiveSemesterFilter || stored.semester_id === effectiveSemesterFilter)
+    ) {
+      stored.unscheduled_classes.forEach((item) => {
+        const section = sectionLookup.get(item.section_id)
+        if (sectionMatchesCohortFilter(section, cohortIds)) {
+          addItem(item)
+        }
+      })
+    }
+
+    return [...byKey.values()]
+  }, [effectiveSemesterFilter, sectionLookup])
+
+  const runExport = useCallback(({
+    cohortIds = effectiveCohortIds,
+    wave = selectedWave,
+    timetablesToExport = filteredTimetables,
+    unscheduledToExport = cohortUnscheduledClasses,
+  } = {}) => {
+    const scopedSections = sections.filter(
+      (section) =>
+        (effectiveSemesterFilter ? section.semester_id === effectiveSemesterFilter : true)
+        && sectionMatchesCohortFilter(section, cohortIds),
+    )
+
     const exportRows = prepareTimetablesForExport(
-      filteredTimetables,
+      timetablesToExport,
       sectionLookup,
-      { semesterSections, semesterLookup },
+      {
+        semesterSections: scopedSections,
+        semesterLookup,
+        unscheduledClasses: resolveUnscheduledForExport(cohortIds, unscheduledToExport),
+        waves: semesterWaves,
+      },
     )
 
     if (exportRows.length === 0) {
-      message.warning('Không có dữ liệu để xuất')
-      return
+      return { ok: false, reason: 'empty' }
     }
 
-    const filename = buildExportFilename('TKB', { semesterId: effectiveSemesterFilter })
+    const unscheduledRowCount = exportRows.filter((row) => row.export_unscheduled).length
+    const suffix = buildExportSuffix(wave, cohortIds)
+    const filename = buildExportFilename('TKB', {
+      semesterId: effectiveSemesterFilter,
+      suffix,
+    })
+
     exportToExcel(
       exportRows,
       exportColumns,
       filename,
-      { sheetName: 'Thoi khoa bieu' },
+      { sheetName: wave?.wave_name || 'Thoi khoa bieu' },
     )
+
+    const scopeLabel = wave
+      ? wave.wave_name || `Đợt ${wave.wave_order}`
+      : cohortIds.length
+        ? cohortIds.join(', ')
+        : 'tất cả'
+
+    return {
+      ok: true,
+      filename,
+      rowCount: exportRows.length,
+      unscheduledRowCount,
+      scopeLabel,
+    }
+  }, [
+    buildExportSuffix,
+    cohortUnscheduledClasses,
+    effectiveCohortIds,
+    effectiveSemesterFilter,
+    exportColumns,
+    filteredTimetables,
+    sectionLookup,
+    sections,
+    semesterLookup,
+    selectedWave,
+    resolveUnscheduledForExport,
+  ])
+
+  const handleExport = () => {
+    if (semesterWaves.length > 0 && !selectedWave) {
+      message.warning('Vui lòng chọn đợt trước khi xuất file Excel')
+      return
+    }
+
+    const result = runExport()
+    if (!result.ok) {
+      message.warning('Không có dữ liệu để xuất')
+      return
+    }
+
     message.success(
-      cohortFilter.length
-        ? `Đã xuất ${exportRows.length} buổi (${cohortFilter.join(', ')}) — ${filename}`
-        : 'Xuất file Excel thành công',
+      `Đã xuất ${result.rowCount} buổi (${result.scopeLabel})${
+        result.unscheduledRowCount ? ` — ${result.unscheduledRowCount} buổi chưa xếp phòng` : ''
+      } — ${result.filename}`,
     )
+  }
+
+  const handleExportAllWaves = () => {
+    if (!semesterWaves.length) {
+      message.warning('Học kỳ này chưa cấu hình đợt xếp lịch')
+      return
+    }
+
+    let exported = 0
+    semesterWaves.forEach((wave) => {
+      const cohortIds = wave.cohort_ids || []
+      const timetablesToExport = timetables.filter((item) => {
+        if (effectiveSemesterFilter && item.section?.semester_id !== effectiveSemesterFilter) {
+          return false
+        }
+        const section = item.section || sectionLookup.get(item.section_id)
+        return sectionMatchesCohortFilter(section, cohortIds)
+      })
+      const unscheduledToExport = unscheduledClasses.filter((item) => {
+        const section = sectionLookup.get(item.section_id)
+        return sectionMatchesCohortFilter(section, cohortIds)
+      })
+
+      const result = runExport({
+        cohortIds,
+        wave,
+        timetablesToExport,
+        unscheduledToExport,
+      })
+      if (result.ok) {
+        exported += 1
+      }
+    })
+
+    if (!exported) {
+      message.warning('Không có dữ liệu để xuất cho các đợt')
+      return
+    }
+
+    message.success(`Đã xuất ${exported} file Excel (mỗi đợt một file)`)
   }
 
   const openCreate = () => {
@@ -646,14 +856,14 @@ function Timetables() {
       key: 'room_id',
       width: 140,
       render: (value, record) => {
-        const label = formatTimetableRoom(value, record.section)
-        const isVirtual = label === 'Hệ thống LMS' || label === 'Học trực tuyến'
+        const label = formatTimetableRoom(value, record.section, roomLookup)
+        const isVirtual = label === 'ONLINE- Elearning' || label === 'Hệ thống LMS' || label === 'Học trực tuyến'
         return isVirtual ? (
           <Tag color="geekblue">{label}</Tag>
         ) : value ? (
-          <Tag color="geekblue">{value}</Tag>
+          <Tag color="geekblue">{label}</Tag>
         ) : (
-          <Tag>Không có phòng</Tag>
+          <Tag>Chưa xếp phòng</Tag>
         )
       },
     },
@@ -726,7 +936,13 @@ function Timetables() {
     <Spin spinning={loading}>
       <PageHeader
           title="Thời khóa biểu"
-          subtitle="Quản lý lịch học sau khi xếp lịch AI"
+          subtitle={
+            selectedWave
+              ? `${selectedWave.wave_name} — tuần HK ${selectedWave.start_week} (${(selectedWave.cohort_ids || []).join(', ')})`
+              : semesterWaves.length
+                ? 'Chọn đợt để lọc và xuất TKB theo niên khóa'
+                : 'Quản lý lịch học sau khi xếp lịch AI'
+          }
           filters={
             <>
               <Select
@@ -735,18 +951,33 @@ function Timetables() {
                 style={{ minWidth: 240 }}
                 options={semesterOptions}
                 value={effectiveSemesterFilter}
-                onChange={setSemesterFilter}
+                onChange={(value) => {
+                  setSemesterFilter(value)
+                  setWaveFilter(null)
+                }}
               />
-              <Select
-                allowClear
-                mode="multiple"
-                placeholder="Lọc niên khóa"
-                style={{ minWidth: 240 }}
-                options={cohortOptions}
-                value={cohortFilter}
-                onChange={setCohortFilter}
-                maxTagCount="responsive"
-              />
+              {semesterWaves.length > 0 ? (
+                <Select
+                  allowClear
+                  loading={loadingWaves}
+                  placeholder="Chọn đợt xếp lịch"
+                  style={{ minWidth: 280 }}
+                  options={waveOptions}
+                  value={waveFilter}
+                  onChange={setWaveFilter}
+                />
+              ) : (
+                <Select
+                  allowClear
+                  mode="multiple"
+                  placeholder="Lọc niên khóa"
+                  style={{ minWidth: 240 }}
+                  options={cohortOptions}
+                  value={cohortFilter}
+                  onChange={setCohortFilter}
+                  maxTagCount="responsive"
+                />
+              )}
               {viewMode === 'table' ? (
                 <>
                   <Select
@@ -782,9 +1013,34 @@ function Timetables() {
               <Button type="primary" size="middle" icon={<PlusOutlined />} onClick={openCreate}>
                 Thêm mới
               </Button>
-              <Button size="middle" icon={<ExportOutlined />} onClick={handleExport}>
-                Xuất Excel
-              </Button>
+              {semesterWaves.length > 1 ? (
+                <Dropdown
+                  menu={{
+                    items: [
+                      {
+                        key: 'wave',
+                        label: selectedWave
+                          ? `Xuất ${selectedWave.wave_name || 'đợt đang chọn'}`
+                          : 'Xuất đợt đang chọn',
+                        onClick: handleExport,
+                      },
+                      {
+                        key: 'all-waves',
+                        label: `Xuất tất cả ${semesterWaves.length} đợt`,
+                        onClick: handleExportAllWaves,
+                      },
+                    ],
+                  }}
+                >
+                  <Button size="middle" icon={<ExportOutlined />}>
+                    Xuất Excel
+                  </Button>
+                </Dropdown>
+              ) : (
+                <Button size="middle" icon={<ExportOutlined />} onClick={handleExport}>
+                  Xuất Excel
+                </Button>
+              )}
             </>
           }
         />
@@ -875,7 +1131,7 @@ function Timetables() {
             className={TABLE_SCROLL_CLASS}
             rowKey="schedule_id"
             columns={columns}
-            dataSource={filteredTimetables}
+            dataSource={displayTimetables}
             pagination={{
               pageSize: 15,
               showSizeChanger: true,

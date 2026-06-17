@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Form, Input, InputNumber, Select, Tag } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Form, Input, InputNumber, Select, Space, Tag, Typography } from 'antd'
+import CourseOfflineScheduleFields from '../../components/MasterData/CourseOfflineScheduleFields'
 import ExcelImportModal from '../../components/Common/ExcelImportModal'
 import ImportToolbarActions from '../../components/Common/ImportToolbarActions'
 import MasterDataCrudPage from '../../components/Common/MasterDataCrudPage'
 import { getImportTemplate } from '../../config/importTemplates'
 import { filterFacultyUnits } from '../../constants/unitTypes'
 import { CLASS_TYPE_OPTIONS, formatClassType, getClassTypeColor, normalizeDeliveryChannel } from '../../constants/classTypes'
+import { formatOfflineSchedulePreview } from '../../constants/offlineSchedule'
 import { ROOM_TYPE_OPTIONS } from '../../constants/roomTypes'
 import {
   SECTIONING_TEMPLATE_OPTIONS,
@@ -27,6 +29,8 @@ import {
 
 function Courses() {
   const [importOpen, setImportOpen] = useState(false)
+  const [unitFilter, setUnitFilter] = useState(null)
+  const [classTypeFilter, setClassTypeFilter] = useState(null)
   const [unitOptions, setUnitOptions] = useState([])
   const importTemplate = getImportTemplate('courses')
 
@@ -59,6 +63,19 @@ function Courses() {
       })
   }, [])
 
+  const displayData = useMemo(() => {
+    return crud.data.filter((record) => {
+      if (unitFilter && record.unit_id !== unitFilter) {
+        return false
+      }
+      if (classTypeFilter
+        && normalizeDeliveryChannel(record.class_type) !== classTypeFilter) {
+        return false
+      }
+      return true
+    })
+  }, [crud.data, unitFilter, classTypeFilter])
+
   const columns = [
     {
       title: 'Mã HP',
@@ -89,13 +106,26 @@ function Courses() {
       render: formatCredits,
     },
     {
-      title: 'Kênh học',
+      title: 'Hình thức học',
       dataIndex: 'class_type',
       key: 'class_type',
       width: 140,
       render: (value) => (
         <Tag color={getClassTypeColor(value)}>{formatClassType(value)}</Tag>
       ),
+    },
+    {
+      title: 'Buổi offline',
+      key: 'offline_schedule',
+      width: 180,
+      ellipsis: true,
+      render: (_, record) => {
+        const summary = formatOfflineSchedulePreview(record)
+        if (summary.startsWith('Chưa cấu hình')) {
+          return <Typography.Text type="secondary">Tự động</Typography.Text>
+        }
+        return summary
+      },
     },
     {
       title: 'Mẫu sinh lớp',
@@ -131,7 +161,7 @@ function Courses() {
         subtitle="Quản lý danh mục học phần, tín chỉ và yêu cầu phòng học"
         rowKey="course_id"
         columns={columns}
-        dataSource={crud.data}
+        dataSource={displayData}
         loading={crud.loading}
         submitting={crud.submitting}
         modalOpen={crud.modalOpen}
@@ -152,90 +182,119 @@ function Courses() {
         modalTitleCreate="Thêm học phần mới"
         modalTitleEdit="Cập nhật học phần"
         form={crud.form}
-        scrollX={1250}
+        scrollX={1380}
+        modalWidth={920}
+        modalClassName="course-form-modal"
         extraActions={
           <ImportToolbarActions onImportClick={() => setImportOpen(true)} />
         }
+        extraFilters={
+          <Space wrap size="middle">
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="Lọc theo khoa"
+              style={{ minWidth: 220 }}
+              options={unitOptions}
+              value={unitFilter}
+              onChange={setUnitFilter}
+            />
+            <Select
+              allowClear
+              placeholder="Lọc theo hình thức học"
+              style={{ minWidth: 220 }}
+              options={CLASS_TYPE_OPTIONS}
+              value={classTypeFilter}
+              onChange={setClassTypeFilter}
+            />
+          </Space>
+        }
         formContent={(editingRecord) => (
-          <>
-            <Form.Item
-              name="course_id"
-              label="Mã học phần"
-              rules={[{ required: true, message: 'Vui lòng nhập mã học phần' }]}
-            >
-              <Input placeholder="VD: INT3306" disabled={Boolean(editingRecord)} />
-            </Form.Item>
-            <Form.Item
-              name="course_name"
-              label="Tên học phần"
-              rules={[{ required: true, message: 'Vui lòng nhập tên học phần' }]}
-            >
-              <Input placeholder="VD: Cơ sở dữ liệu" />
-            </Form.Item>
-            <Form.Item
-              name="credits"
-              label="Tổng tín chỉ"
-              rules={[{ required: true, message: 'Vui lòng nhập tổng tín chỉ' }]}
-            >
-              <InputNumber min={0} max={10} step={0.5} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item
-              name="theory_credits"
-              label="Tín chỉ lý thuyết"
-              rules={[{ required: true, message: 'Vui lòng nhập tín chỉ lý thuyết' }]}
-            >
-              <InputNumber min={0} max={10} step={0.5} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item
-              name="practice_credits"
-              label="Tín chỉ thực hành"
-              rules={[{ required: true, message: 'Vui lòng nhập tín chỉ thực hành' }]}
-            >
-              <InputNumber min={0} max={10} step={0.5} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item
-              name="class_type"
-              label="Kênh học"
-              rules={[{ required: true, message: 'Vui lòng chọn kênh học' }]}
-              initialValue="FACE"
-              extra="Quyết định sinh lớp và có đưa vào xếp lịch AI hay không. LT/TH/ELN0 được suy ra ở cấp lớp học phần."
-            >
-              <Select options={CLASS_TYPE_OPTIONS} placeholder="Chọn kênh học" />
-            </Form.Item>
-            <Form.Item
-              name="template_code"
-              label="Mẫu sinh lớp"
-              rules={[{ required: true, message: 'Vui lòng chọn mẫu sinh lớp' }]}
-              initialValue="STANDARD"
-              extra="Quy tắc sinh lớp tự động. Chọn SPECIAL cho Đồ án/Thực tập/Khóa luận (không sinh lớp tự động)."
-            >
-              <Select
-                options={SECTIONING_TEMPLATE_OPTIONS}
-                placeholder="Chọn mẫu sinh lớp"
-              />
-            </Form.Item>
-            <Form.Item
-              name="room_type"
-              label="Loại phòng mặc định"
-              rules={[{ required: true, message: 'Vui lòng chọn loại phòng mặc định' }]}
-              initialValue="LT"
-              extra="Dùng khi sinh lớp tự động: PM cho phòng máy, SB cho thể dục, BV cho lâm sàng..."
-            >
-              <Select options={ROOM_TYPE_OPTIONS} placeholder="Chọn loại phòng mặc định" />
-            </Form.Item>
-            <Form.Item
-              name="unit_id"
-              label="Khoa quản lý"
-              rules={[{ required: true, message: 'Vui lòng chọn khoa quản lý' }]}
-            >
-              <Select
-                showSearch
-                optionFilterProp="label"
-                options={unitOptions}
-                placeholder="Chọn khoa quản lý"
-              />
-            </Form.Item>
-          </>
+          <div className="course-form-layout">
+            <div className="course-form-grid">
+              <Form.Item
+                name="course_id"
+                label="Mã học phần"
+                rules={[{ required: true, message: 'Vui lòng nhập mã học phần' }]}
+              >
+                <Input placeholder="VD: INT3306" disabled={Boolean(editingRecord)} />
+              </Form.Item>
+              <Form.Item
+                name="course_name"
+                label="Tên học phần"
+                rules={[{ required: true, message: 'Vui lòng nhập tên học phần' }]}
+              >
+                <Input placeholder="VD: Cơ sở dữ liệu" />
+              </Form.Item>
+              <Form.Item
+                name="credits"
+                label="Tổng tín chỉ"
+                rules={[{ required: true, message: 'Vui lòng nhập tổng tín chỉ' }]}
+              >
+                <InputNumber min={0} max={10} step={0.5} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                name="theory_credits"
+                label="Tín chỉ lý thuyết"
+                rules={[{ required: true, message: 'Vui lòng nhập tín chỉ lý thuyết' }]}
+              >
+                <InputNumber min={0} max={10} step={0.5} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                name="practice_credits"
+                label="Tín chỉ thực hành"
+                rules={[{ required: true, message: 'Vui lòng nhập tín chỉ thực hành' }]}
+              >
+                <InputNumber min={0} max={10} step={0.5} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                name="class_type"
+                label="Hình thức học"
+                rules={[{ required: true, message: 'Vui lòng chọn hình thức học' }]}
+                initialValue="OFFLINE"
+                extra="Quyết định sinh lớp và có đưa vào xếp lịch AI hay không."
+              >
+                <Select options={CLASS_TYPE_OPTIONS} placeholder="Chọn hình thức học" />
+              </Form.Item>
+              <Form.Item
+                name="template_code"
+                label="Mẫu sinh lớp"
+                rules={[{ required: true, message: 'Vui lòng chọn mẫu sinh lớp' }]}
+                initialValue="STANDARD"
+                extra="Đại trà: tách LT (giảng đường) + TH (.TH1…). Lab IT: gộp LT+TH một lớp ở phòng máy."
+              >
+                <Select
+                  options={SECTIONING_TEMPLATE_OPTIONS}
+                  placeholder="Chọn mẫu sinh lớp"
+                />
+              </Form.Item>
+              <Form.Item
+                name="room_type"
+                label="Loại phòng mặc định"
+                rules={[{ required: true, message: 'Vui lòng chọn loại phòng mặc định' }]}
+                initialValue="LT"
+                extra="Với Đại trà: LT luôn giảng đường (STD); trường này áp cho lớp TH — vd. PM nếu thực hành ở phòng máy."
+              >
+                <Select options={ROOM_TYPE_OPTIONS} placeholder="Chọn loại phòng mặc định" />
+              </Form.Item>
+              <Form.Item
+                className="course-form-grid__full"
+                name="unit_id"
+                label="Khoa quản lý"
+                rules={[{ required: true, message: 'Vui lòng chọn khoa quản lý' }]}
+              >
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  options={unitOptions}
+                  placeholder="Chọn khoa quản lý"
+                />
+              </Form.Item>
+            </div>
+
+            <CourseOfflineScheduleFields form={crud.form} />
+          </div>
         )}
       />
 
@@ -249,7 +308,7 @@ function Courses() {
         templateFileName={importTemplate?.fileName}
       >
         Cột <strong>Mã khoa quản lý</strong> phải là mã khoa hiện hành (FIS, FCS, FAD, FL, FBA, EIB…).
-        Không dùng mã cũ CSE/FBE/FEL/FTS hay tiền tố mã học phần — mỗi học phần có thể thuộc khoa khác nhau sau tái cơ cấu.
+        Coursera / E-learning có thể thêm cột <strong>Số buổi offline</strong>, <strong>Tiết/buổi offline</strong>, <strong>Nhịp tuần offline</strong>.
       </ExcelImportModal>
     </>
   )

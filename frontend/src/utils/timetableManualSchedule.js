@@ -1,7 +1,9 @@
-import { TIMETABLE_SHIFTS } from './timetableGrid'
+import { resolveWaveStartWeek } from './semesterWaves'
+import { resolvePhaseDateRange } from './scheduleRhythm'
 
 const THEORY_ROOMS = new Set(['LT', 'STD', 'STANDARD', ''])
-const PC_ROOMS = new Set(['PC', 'PM', 'LAB', 'TH'])
+const COMPUTER_LAB_ROOMS = new Set(['PC', 'PM', 'LAB'])
+const MEDICAL_ROOMS = new Set(['MED', 'BV', 'VJ'])
 
 export const DRAG_MIME = 'application/x-phenitime-unscheduled'
 
@@ -28,8 +30,11 @@ export function isRoomTypeCompatible(roomType, required) {
   if (THEORY_ROOMS.has(req) && THEORY_ROOMS.has(room)) {
     return true
   }
-  if (PC_ROOMS.has(req) && PC_ROOMS.has(room)) {
-    return true
+  if (COMPUTER_LAB_ROOMS.has(req)) {
+    return COMPUTER_LAB_ROOMS.has(room)
+  }
+  if (req === 'MED') {
+    return MEDICAL_ROOMS.has(room)
   }
   return room === req
 }
@@ -166,6 +171,16 @@ export function resolveSemesterDateRange(semester) {
   }
 }
 
+function formatPersistDate(value) {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export function buildManualTimetablePayload({
   section,
   roomId,
@@ -173,16 +188,24 @@ export function buildManualTimetablePayload({
   startPeriod,
   periodCount = 3,
   semester,
+  waves = [],
+  defaultTeachingWeeks = 10,
 }) {
-  const { startDate, endDate } = resolveSemesterDateRange(semester)
+  const waveStartWeek = resolveWaveStartWeek(section, waves)
+  const weekTo = waveStartWeek + Math.max(Number(defaultTeachingWeeks) || 10, 1) - 1
+  const phaseDates = semester?.start_date
+    ? resolvePhaseDateRange(semester, waveStartWeek, weekTo)
+    : null
+  const fallbackDates = resolveSemesterDateRange(semester)
+
   return {
     section_id: section.section_id,
     room_id: roomId,
     day_of_week: day,
     start_period: startPeriod,
     period_count: periodCount,
-    start_date: startDate,
-    end_date: endDate,
+    start_date: formatPersistDate(phaseDates?.start_date) || fallbackDates.startDate,
+    end_date: formatPersistDate(phaseDates?.end_date) || fallbackDates.endDate,
   }
 }
 

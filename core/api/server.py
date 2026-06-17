@@ -35,6 +35,15 @@ app.add_middleware(
 )
 
 
+class ExistingOccupancyInput(BaseModel):
+    room_id: str
+    day_of_week: int = Field(ge=2, le=7)
+    start_period: int = Field(ge=1, le=15)
+    period_count: int = Field(default=3, ge=1, le=15)
+    week_from: int = Field(default=1, ge=1)
+    week_to: int = Field(default=99, ge=1)
+
+
 class AlgorithmConfig(BaseModel):
     shift_duration: int = 3
     max_lecturer_shifts_per_day: int = Field(default=2, ge=1, le=5)
@@ -48,6 +57,8 @@ class AlgorithmConfig(BaseModel):
     lns_max_iterations: int = Field(default=3, ge=1, le=10)
     lns_max_neighborhood: int = Field(default=40, ge=5, le=120)
     lns_max_time_seconds: float = Field(default=90.0, ge=10.0, le=600.0)
+    existing_occupancy: list[ExistingOccupancyInput] = Field(default_factory=list)
+    fixed_room_per_section: bool = True
 
 
 class RoomInput(BaseModel):
@@ -289,6 +300,10 @@ def solve_timetable(request: ScheduleRequest):
                 "lns_max_iterations": request.config.lns_max_iterations,
                 "lns_max_neighborhood": request.config.lns_max_neighborhood,
                 "lns_max_time_seconds": request.config.lns_max_time_seconds,
+                "existing_occupancy": [
+                    block.model_dump() for block in request.config.existing_occupancy
+                ],
+                "fixed_room_per_section": request.config.fixed_room_per_section,
             },
         )
         scheduler.build_model()

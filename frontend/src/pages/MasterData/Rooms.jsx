@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Form, Input, InputNumber, Select, Tag } from 'antd'
 import ExcelImportModal from '../../components/Common/ExcelImportModal'
 import ImportToolbarActions from '../../components/Common/ImportToolbarActions'
@@ -16,6 +16,7 @@ import { formatRoomType, getRoomTypeColor } from '../../utils/formatters'
 
 function Rooms() {
   const [importOpen, setImportOpen] = useState(false)
+  const [roomTypeFilter, setRoomTypeFilter] = useState(null)
   const importTemplate = getImportTemplate('rooms')
 
   const crud = useCrudPage({
@@ -26,6 +27,28 @@ function Rooms() {
     getId: (record) => record.room_id,
     searchFields: ['room_id', 'room_type'],
   })
+
+  const roomTypeFilterOptions = useMemo(() => {
+    const options = new Map(
+      ROOM_TYPE_OPTIONS.map((option) => [option.value, option.label]),
+    )
+    crud.data.forEach((record) => {
+      const roomType = String(record.room_type || '').trim().toUpperCase()
+      if (roomType && !options.has(roomType)) {
+        options.set(roomType, `${roomType} — ${formatRoomType(roomType)}`)
+      }
+    })
+    return Array.from(options.entries()).map(([value, label]) => ({ value, label }))
+  }, [crud.data])
+
+  const displayData = useMemo(() => {
+    if (!roomTypeFilter) {
+      return crud.data
+    }
+    return crud.data.filter(
+      (record) => String(record.room_type || '').trim().toUpperCase() === roomTypeFilter,
+    )
+  }, [crud.data, roomTypeFilter])
 
   const columns = [
     {
@@ -60,7 +83,7 @@ function Rooms() {
       subtitle="Quản lý phòng học và các địa điểm thực hành, thực tập"
       rowKey="room_id"
       columns={columns}
-      dataSource={crud.data}
+      dataSource={displayData}
       loading={crud.loading}
       submitting={crud.submitting}
       modalOpen={crud.modalOpen}
@@ -78,6 +101,18 @@ function Rooms() {
       scrollX={900}
       extraActions={
         <ImportToolbarActions onImportClick={() => setImportOpen(true)} />
+      }
+      extraFilters={
+        <Select
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          placeholder="Lọc theo loại phòng"
+          style={{ minWidth: 260 }}
+          options={roomTypeFilterOptions}
+          value={roomTypeFilter}
+          onChange={setRoomTypeFilter}
+        />
       }
       formContent={(editingRecord) => (
         <>

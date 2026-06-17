@@ -67,11 +67,8 @@ function isAsyncOnlineExportSection(section) {
             || /^ELN\d+$/i.test(groupCode);
     }
 
-    if (channel === DELIVERY_CHANNELS.COURSERA && isCourseraBaseGroupCode(groupCode)) {
-        return true;
-    }
-
-    if (channel === DELIVERY_CHANNELS.HYBRID && /^ELN\d+$/i.test(groupCode)) {
+    if (channel === DELIVERY_CHANNELS.COURSERA
+        && (isCourseraBaseGroupCode(groupCode) || /^ELN\d+$/i.test(groupCode))) {
         return true;
     }
 

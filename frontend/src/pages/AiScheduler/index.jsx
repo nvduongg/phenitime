@@ -32,6 +32,7 @@ import {
   getRooms,
   getSchedulerJobStatus,
   getSchedulingSettings,
+  getSemesterWaves,
   triggerAiScheduler,
   updateSchedulingSettings,
 } from '../../services/api'
@@ -39,6 +40,7 @@ import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
 import { sectionMatchesCohortFilter } from '../../utils/exportFormatters'
 import { loadCohortFilter, saveCohortFilter } from '../../utils/cohortFilterStorage'
 import { formatCohortLabel } from '../../utils/formatters'
+import { findWaveForCohorts } from '../../utils/semesterWaves'
 
 const POLL_INTERVAL_MS = 3000
 const MAX_POLL_DURATION_MS = 65 * 60 * 1000
@@ -107,6 +109,8 @@ function AiScheduler() {
   const [roomCount, setRoomCount] = useState(0)
   const [cohortOptions, setCohortOptions] = useState([])
   const [cohortFilter, setCohortFilterState] = useState(() => loadCohortFilter())
+  const [semesterWaves, setSemesterWaves] = useState([])
+  const [loadingWaves, setLoadingWaves] = useState(false)
   const [savingSettings, setSavingSettings] = useState(false)
   const [pollElapsedSec, setPollElapsedSec] = useState(0)
   const pollTimerRef = useRef(null)
@@ -114,6 +118,24 @@ function AiScheduler() {
   const pollErrorCountRef = useRef(0)
 
   const selectedSemesterId = Form.useWatch('semester_id', form)
+  const selectedWaveId = Form.useWatch('wave_id', form)
+
+  const selectedWave = useMemo(
+    () =>
+      semesterWaves.find(
+        (wave) =>
+          wave.wave_id === selectedWaveId
+          || String(wave.wave_order) === String(selectedWaveId),
+      ) || null,
+    [semesterWaves, selectedWaveId],
+  )
+
+  const effectiveCohortIds = useMemo(() => {
+    if (selectedWave?.cohort_ids?.length) {
+      return selectedWave.cohort_ids
+    }
+    return cohortFilter
+  }, [selectedWave, cohortFilter])
 
   const setCohortFilter = useCallback((value) => {
     setCohortFilterState((prev) => {
@@ -147,6 +169,40 @@ function AiScheduler() {
       form.setFieldsValue({ semester_id: activeSemesterId })
     }
   }, [activeSemesterId, form])
+
+  useEffect(() => {
+    if (!selectedSemesterId) {
+      setSemesterWaves([])
+      form.setFieldValue('wave_id', undefined)
+      return
+    }
+
+    setLoadingWaves(true)
+    getSemesterWaves(selectedSemesterId)
+      .then((result) => {
+        setSemesterWaves(result.data || [])
+      })
+      .catch(() => {
+        setSemesterWaves([])
+      })
+      .finally(() => setLoadingWaves(false))
+  }, [selectedSemesterId, form])
+
+  useEffect(() => {
+    if (selectedWave?.cohort_ids?.length) {
+      setCohortFilter(selectedWave.cohort_ids)
+    }
+  }, [selectedWave, setCohortFilter])
+
+  useEffect(() => {
+    if (!semesterWaves.length || selectedWaveId) {
+      return
+    }
+    const matched = findWaveForCohorts(semesterWaves, cohortFilter)
+    if (matched?.wave_id) {
+      form.setFieldValue('wave_id', matched.wave_id)
+    }
+  }, [semesterWaves, cohortFilter, selectedWaveId, form])
 
   useEffect(() => {
     getSchedulingSettings()
@@ -227,7 +283,7 @@ function AiScheduler() {
             setSuccessResult(result)
             saveSchedulerResult({
               semester_id: result.semester_id || selectedSemesterId,
-              cohort_ids: result.cohort_ids || cohortFilter,
+              cohort_ids: result.cohort_ids || effectiveCohortIds,
               unscheduled_classes: result.unscheduled_classes || [],
               timetable_snapshot: result.timetable_snapshot || [],
               total_scheduled: result.total_scheduled,
@@ -276,7 +332,7 @@ function AiScheduler() {
       checkStatus()
       pollTimerRef.current = setInterval(checkStatus, POLL_INTERVAL_MS)
     },
-    [fetchReadinessData, selectedSemesterId, stopPolling, cohortFilter],
+    [fetchReadinessData, selectedSemesterId, stopPolling, effectiveCohortIds],
   )
 
   const jobStateLabel = useMemo(() => {
@@ -307,11 +363,11 @@ function AiScheduler() {
     return sections.filter(
       (section) =>
         section.semester_id === selectedSemesterId
-        && sectionMatchesCohortFilter(section, cohortFilter),
+        && sectionMatchesCohortFilter(section, effectiveCohortIds),
     )
-  }, [sections, selectedSemesterId, cohortFilter])
+  }, [sections, selectedSemesterId, effectiveCohortIds])
 
-  const hasCohortFilter = cohortFilter.length > 0
+  const hasCohortFilter = effectiveCohortIds.length > 0
 
   const readiness = useMemo(() => {
     const totalSections = semesterSections.length
@@ -330,10 +386,10 @@ function AiScheduler() {
         ok: hasSections,
         detail: hasSections
           ? hasCohortFilter
-            ? `${totalSections} lớp (${cohortFilter.join(', ')})`
+            ? `${totalSections} lớp (${effectiveCohortIds.join(', ')})`
             : `${totalSections} lớp trong học kỳ`
           : hasCohortFilter
-            ? `Không có lớp thuộc ${cohortFilter.join(', ')}`
+            ? `Không có lớp thuộc ${effectiveCohortIds.join(', ')}`
             : 'Chưa có lớp học phần',
         link: '/course-sections',
       },
@@ -358,7 +414,16 @@ function AiScheduler() {
     ]
 
     return { totalSections, assignedSections, unassignedSections, checks, isReady }
-  }, [semesterSections, roomCount, cohortFilter, hasCohortFilter])
+  }, [semesterSections, roomCount, effectiveCohortIds, hasCohortFilter])
+
+  const waveOptions = useMemo(
+    () =>
+      semesterWaves.map((wave) => ({
+        value: wave.wave_id,
+        label: `${wave.wave_name || `Đợt ${wave.wave_order}`} — tuần ${wave.start_week} (${(wave.cohort_ids || []).join(', ')})`,
+      })),
+    [semesterWaves],
+  )
 
   const readinessStatus = useMemo(() => {
     if (successResult) {
@@ -413,7 +478,8 @@ function AiScheduler() {
 
       const queued = await triggerAiScheduler({
         semester_id: values.semester_id,
-        cohort_ids: cohortFilter,
+        wave_id: values.wave_id || null,
+        cohort_ids: effectiveCohortIds,
         config: {
           shift_duration: values.shift_duration,
           allowed_start_periods: values.allowed_start_periods,
@@ -481,7 +547,7 @@ function AiScheduler() {
                   onClick={() => {
                     saveSchedulerResult({
                       semester_id: successResult.semester_id || selectedSemesterId,
-                      cohort_ids: successResult.cohort_ids || cohortFilter,
+                      cohort_ids: successResult.cohort_ids || effectiveCohortIds,
                       unscheduled_classes: unscheduledClasses,
                     })
                     navigate('/timetables')
@@ -617,19 +683,66 @@ function AiScheduler() {
                   />
                 </Form.Item>
 
+                <Form.Item
+                  name="wave_id"
+                  label="Đợt xếp lịch"
+                  tooltip="Chọn đợt để dời tuần bắt đầu và giữ phòng từ TKB đợt trước"
+                  rules={
+                    semesterWaves.length
+                      ? [{ required: true, message: 'Vui lòng chọn đợt xếp lịch' }]
+                      : []
+                  }
+                >
+                  <Select
+                    allowClear
+                    loading={loadingWaves}
+                    placeholder={
+                      loadingWaves
+                        ? 'Đang tải đợt...'
+                        : semesterWaves.length
+                          ? 'Chọn đợt (VD: Đ1 K16-K17, Đ2 K18...)'
+                          : 'Chưa có đợt — lưu cấu hình bên dưới'
+                    }
+                    options={waveOptions}
+                    size="large"
+                    disabled={!selectedSemesterId || loadingWaves}
+                    notFoundContent="Chưa có đợt nào"
+                  />
+                </Form.Item>
+
+                {selectedSemesterId && !loadingWaves && semesterWaves.length === 0 ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    className="ai-config-alert"
+                    message="Học kỳ chưa có đợt xếp lịch"
+                    description={
+                      <>
+                        Vào <Link to="/master-data/semesters">Danh mục → Học kỳ</Link>, bấm biểu tượng
+                        lịch, thêm đợt hoặc dùng <strong>Gợi ý phân đợt</strong> từ niên khóa
+                        trong hệ thống, rồi <strong>Lưu đợt</strong>.
+                      </>
+                    }
+                  />
+                ) : null}
+
                 <Alert
                   type="warning"
                   showIcon
                   className="ai-config-alert"
                   message={
-                    hasCohortFilter
-                      ? 'Chỉ ghi đè TKB niên khóa đã chọn'
-                      : 'Ghi đè toàn bộ TKB học kỳ'
+                    selectedWave
+                      ? `${selectedWave.wave_name} — tuần HK ${selectedWave.start_week}`
+                      : hasCohortFilter
+                        ? 'Chỉ ghi đè TKB niên khóa đã chọn'
+                        : 'Ghi đè toàn bộ TKB học kỳ'
                   }
                   description={
-                    hasCohortFilter
-                      ? `Xóa lịch cũ của ${cohortFilter.join(', ')} trước khi lưu kết quả mới.`
-                      : 'Toàn bộ TKB học kỳ sẽ bị xóa trước khi lưu kết quả mới.'
+                    selectedWave
+                      ? `Xếp ${effectiveCohortIds.join(', ')}. Phòng đã bận từ đợt trước (tuần giao nhau) sẽ bị chặn.`
+                      : hasCohortFilter
+                        ? `Xóa lịch cũ của ${effectiveCohortIds.join(', ')} trước khi lưu kết quả mới.`
+                        : 'Toàn bộ TKB học kỳ sẽ bị xóa trước khi lưu kết quả mới.'
                   }
                 />
 

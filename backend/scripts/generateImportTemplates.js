@@ -39,7 +39,7 @@ const TEMPLATE_DEFINITIONS = [
           ['Tổng tín chỉ', 'Tổng số tín chỉ', 'Có'],
           ['Tín chỉ lý thuyết', 'Số tín chỉ lý thuyết', 'Có'],
           ['Tín chỉ thực hành', 'Số tín chỉ thực hành', 'Có'],
-          ['Hình thức học', 'FACE, ELEARNING, COURSERA, HYBRID, SPECIAL hoặc giá trị quen thuộc: OFFLINE, ONLINE_ELEARNING, Coursera, HYBRID, ĐA/TT/KL (mặc định FACE)', 'Không'],
+          ['Hình thức học', 'OFFLINE, ELEARNING, COURSERA, SPECIAL — Coursera = online + gặp mặt; alias: HYBRID, FACE, ONLINE_ELEARNING, ĐA/TT/KL (mặc định OFFLINE)', 'Không'],
           ['Yêu cầu phòng', 'LT, PM, TN, SB, XT, BV, DN, ONLINE (mặc định LT)', 'Không'],
           ['Mẫu sinh lớp', 'STANDARD | LAB_COUPLED | ONLINE | MEDICAL_CLINIC | SPECIAL (ĐA/TT/KL → SPECIAL)', 'Không'],
           ['Mã khoa quản lý', 'Mã khoa hiện hành trong hệ thống (FIS/FCS/FAD/FL/FBA/EIB…). Không dùng mã cũ CSE/FBE/FEL/FTS hay tiền tố mã học phần.', 'Có'],

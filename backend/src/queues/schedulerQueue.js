@@ -75,11 +75,41 @@ function buildEventMetaLookup(events = []) {
     return lookup;
 }
 
+function resolvePersistWeekWindow(row, meta, waveStartWeek = 1, defaultTeachingWeeks = 10) {
+    let weekFrom = row.week_from ?? meta?.week_from ?? null;
+    let weekTo = row.week_to ?? meta?.week_to ?? null;
+
+    if (weekFrom != null && weekTo == null) {
+        weekTo = weekFrom;
+    }
+
+    if (weekFrom == null && weekTo != null) {
+        weekFrom = weekTo;
+    }
+
+    if (weekFrom == null && waveStartWeek > 1) {
+        weekFrom = waveStartWeek;
+        weekTo = waveStartWeek + Math.max(Number(defaultTeachingWeeks) || 10, 1) - 1;
+    }
+
+    if (weekFrom == null) {
+        return null;
+    }
+
+    if (weekTo == null) {
+        weekTo = weekFrom;
+    }
+
+    return { weekFrom, weekTo };
+}
+
 async function persistTimetables(semesterId, rows, eventMetaLookup = new Map(), options = {}) {
     const scopedSectionIds = Array.isArray(options.sectionIds)
         ? options.sectionIds.filter(Boolean)
         : [];
     const cohortScoped = Boolean(options.cohortScoped && scopedSectionIds.length > 0);
+    const waveStartWeek = Math.max(Number(options.waveStartWeek) || 1, 1);
+    const defaultTeachingWeeks = Math.max(Number(options.defaultTeachingWeeks) || 10, 1);
 
     const semester = await prisma.semester.findUnique({
         where: { semester_id: semesterId },
@@ -104,11 +134,14 @@ async function persistTimetables(semesterId, rows, eventMetaLookup = new Map(), 
                     const meta = row.event_id
                         ? eventMetaLookup.get(row.event_id)
                         : null;
-                    const weekFrom = row.week_from ?? meta?.week_from;
-                    const weekTo = row.week_to ?? meta?.week_to;
-                    const hasPhase = weekFrom && weekTo;
-                    const phaseDates = hasPhase
-                        ? resolvePhaseDateRange(semester, weekFrom, weekTo)
+                    const weekWindow = resolvePersistWeekWindow(
+                        row,
+                        meta,
+                        waveStartWeek,
+                        defaultTeachingWeeks,
+                    );
+                    const phaseDates = weekWindow
+                        ? resolvePhaseDateRange(semester, weekWindow.weekFrom, weekWindow.weekTo)
                         : null;
 
                     return {
@@ -142,10 +175,11 @@ const schedulerWorker = new Worker(
         const lockHeartbeat = startLockHeartbeat(job);
 
         try {
-            const { semester_id: semesterId, config = {}, cohort_ids: cohortIds = [] } = job.data;
+            const { semester_id: semesterId, config = {}, cohort_ids: cohortIds = [], wave_id: waveId = null } = job.data;
 
             const solvePayload = await buildSolvePayload(prisma, semesterId, config, {
                 cohort_ids: cohortIds,
+                wave_id: waveId,
             });
             console.log(
                 `[schedulerQueue] Solver payload: ${solvePayload.rooms.length} rooms, `
@@ -188,6 +222,8 @@ const schedulerWorker = new Worker(
                 {
                     sectionIds: solvePayload.scoped_section_ids,
                     cohortScoped,
+                    waveStartWeek: solvePayload.wave_start_week || 1,
+                    defaultTeachingWeeks: config.max_teaching_weeks,
                 },
             );
 
@@ -217,6 +253,9 @@ const schedulerWorker = new Worker(
                 created_count: createdCount,
                 semester_id: semesterId,
                 cohort_ids: solvePayload.cohort_ids || [],
+                wave_id: solvePayload.wave_id || null,
+                wave_order: solvePayload.wave_order || null,
+                wave_start_week: solvePayload.wave_start_week || 1,
             };
         } finally {
             clearInterval(lockHeartbeat);

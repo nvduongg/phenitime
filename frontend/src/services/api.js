@@ -126,6 +126,16 @@ export const deleteSemester = async (id) => {
   return response.data
 }
 
+export const getSemesterWaves = async (semesterId) => {
+  const response = await api.get(`/semesters/${encodePathSegment(semesterId)}/waves`)
+  return response.data
+}
+
+export const replaceSemesterWaves = async (semesterId, waves) => {
+  const response = await api.put(`/semesters/${encodePathSegment(semesterId)}/waves`, { waves })
+  return response.data
+}
+
 export const getRooms = async () => {
   const response = await api.get('/rooms')
   return response.data

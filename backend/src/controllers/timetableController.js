@@ -87,7 +87,7 @@ exports.deleteTimetable = async (req, res) => {
 
 exports.triggerAiScheduler = async (req, res) => {
     try {
-        const { semester_id, config: requestConfig = {}, cohort_ids = [] } = req.body;
+        const { semester_id, config: requestConfig = {}, cohort_ids = [], wave_id = null } = req.body;
 
         if (!semester_id) {
             return res.status(400).json({
@@ -104,7 +104,7 @@ exports.triggerAiScheduler = async (req, res) => {
 
         const job = await schedulerQueue.add(
             JOB_NAME,
-            { semester_id, config, cohort_ids: normalizedCohortIds },
+            { semester_id, config, cohort_ids: normalizedCohortIds, wave_id: wave_id || null },
             {
                 removeOnComplete: 100,
                 removeOnFail: 50,

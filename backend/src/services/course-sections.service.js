@@ -40,9 +40,12 @@ const {
     calculateIntegratedScheduleParams,
 } = require('../utils/periodCalculator');
 const {
-    buildRhythmOptionsFromConfig,
-    resolveScheduleRhythm,
-} = require('../utils/scheduleRhythm');
+    resolveCourseSchedulingEvents,
+} = require('../utils/sectionSchedulingEvents');
+const {
+    hasManualOfflineSchedule,
+    courseNeedsPhysicalOfflineSections,
+} = require('../utils/offlineScheduleConfig');
 
 const DEFAULT_AVERAGE_COHORT_SIZE = 100;
 
@@ -108,6 +111,17 @@ function resolveThSectionCapacity(schedulingConfig) {
         return configured;
     }
     return SECTIONING_TEMPLATES.STANDARD.thCap;
+}
+
+/** Trần cứng mỗi lớp TH/PM khi xếp TKB (phòng thực hành thường ≤ 50 chỗ). */
+const DEFAULT_PRACTICE_SECTION_MAX_HEADCOUNT = 50;
+
+function resolvePracticeSectionMaxHeadcount(schedulingConfig) {
+    const configured = Number(schedulingConfig?.max_th_capacity);
+    if (Number.isFinite(configured) && configured > 0) {
+        return configured;
+    }
+    return DEFAULT_PRACTICE_SECTION_MAX_HEADCOUNT;
 }
 
 /** Trần tách lớp TH/PM: min(cấu hình, trần phòng an toàn). PC lab 40–45 chỗ → lập kế hoạch theo 40. */
@@ -192,7 +206,6 @@ function shouldMergeGroupsAcrossCurricula(course) {
     }
 
     if (channel === DELIVERY_CHANNELS.ELEARNING
-        || channel === DELIVERY_CHANNELS.HYBRID
         || channel === DELIVERY_CHANNELS.COURSERA) {
         return true;
     }
@@ -261,7 +274,7 @@ function resolveMinSectionHeadcount(targetCapacity) {
     return Math.max(15, Math.floor(cap * 0.5));
 }
 
-function mergeUndersizedTailSections(sections, targetCapacity) {
+function mergeUndersizedTailSections(sections, targetCapacity, maxCapacity = targetCapacity) {
     if (sections.length < 2) {
         return sections;
     }
@@ -273,15 +286,92 @@ function mergeUndersizedTailSections(sections, targetCapacity) {
     }
 
     const previous = sections[sections.length - 2];
+    if (previous.allocatedHeadcount + last.allocatedHeadcount > maxCapacity) {
+        return sections;
+    }
+
     previous.allocatedHeadcount += last.allocatedHeadcount;
     previous.studentGroupIds = [
         ...new Set([...previous.studentGroupIds, ...last.studentGroupIds]),
     ];
     sections.pop();
-    return mergeUndersizedTailSections(sections, targetCapacity);
+    return mergeUndersizedTailSections(sections, targetCapacity, maxCapacity);
 }
 
-function allocateSections(studentGroups, targetCapacity, nameSuffixBuilder) {
+function distributeEvenly(totalHeadcount, sectionCount) {
+    const base = Math.floor(totalHeadcount / sectionCount);
+    let remainder = totalHeadcount % sectionCount;
+    const sizes = [];
+
+    for (let index = 0; index < sectionCount; index += 1) {
+        sizes.push(base + (remainder > 0 ? 1 : 0));
+        if (remainder > 0) {
+            remainder -= 1;
+        }
+    }
+
+    return sizes;
+}
+
+/**
+ * Chia sĩ số cân bằng giữa các lớp: không vượt maxCapacity, ưu tiên gần targetCapacity.
+ * VD 413 SV, target 40, max 50 → 10 lớp (41–42 SV), không tạo lớp TH cuối 53 SV.
+ */
+function computeBalancedSectionSizes(totalHeadcount, options = {}) {
+    const targetCapacity = Math.max(1, Number(options.targetCapacity) || 40);
+    const maxCapacity = Math.max(
+        targetCapacity,
+        Number(options.maxCapacity) || targetCapacity,
+    );
+    const minHeadcount = resolveMinSectionHeadcount(targetCapacity);
+
+    if (totalHeadcount <= 0) {
+        return [];
+    }
+
+    if (totalHeadcount <= maxCapacity) {
+        return [totalHeadcount];
+    }
+
+    const minCount = Math.max(1, Math.ceil(totalHeadcount / maxCapacity));
+    const maxCount = Math.max(1, Math.floor(totalHeadcount / minHeadcount));
+    let best = null;
+
+    for (let count = minCount; count <= maxCount; count += 1) {
+        const sizes = distributeEvenly(totalHeadcount, count);
+        const maxSize = Math.max(...sizes);
+        const minSize = Math.min(...sizes);
+
+        if (maxSize > maxCapacity || minSize < minHeadcount) {
+            continue;
+        }
+
+        const variance = maxSize - minSize;
+        const targetDeviation = sizes.reduce(
+            (sum, size) => sum + Math.abs(size - targetCapacity),
+            0,
+        );
+        const score = variance * 1000 + targetDeviation;
+
+        if (!best || score < best.score) {
+            best = { sizes, score };
+        }
+    }
+
+    if (best) {
+        return best.sizes;
+    }
+
+    return distributeEvenly(totalHeadcount, minCount);
+}
+
+function buildPracticeAllocationOptions(schedulingConfig) {
+    return {
+        maxCapacity: resolvePracticeSectionMaxHeadcount(schedulingConfig),
+    };
+}
+
+function allocateSections(studentGroups, targetCapacity, nameSuffixBuilder, options = {}) {
     if (!studentGroups.length || targetCapacity <= 0) {
         return [];
     }
@@ -295,16 +385,23 @@ function allocateSections(studentGroups, targetCapacity, nameSuffixBuilder) {
         }))
         .filter((group) => group.remaining > 0);
 
+    const maxCapacity = Number(options.maxCapacity) || targetCapacity;
+    const totalHeadcount = queue.reduce((sum, group) => sum + group.remaining, 0);
+    const sectionSizes = computeBalancedSectionSizes(totalHeadcount, {
+        targetCapacity,
+        maxCapacity,
+    });
+
     const sections = [];
     let sectionIndex = 1;
 
-    while (queue.length > 0) {
+    for (const sectionSize of sectionSizes) {
         let currentFill = 0;
         const linkedGroups = new Set();
 
-        while (currentFill < targetCapacity && queue.length > 0) {
+        while (currentFill < sectionSize && queue.length > 0) {
             const group = queue[0];
-            const spaceLeft = targetCapacity - currentFill;
+            const spaceLeft = sectionSize - currentFill;
 
             if (group.remaining <= spaceLeft) {
                 currentFill += group.remaining;
@@ -320,14 +417,14 @@ function allocateSections(studentGroups, targetCapacity, nameSuffixBuilder) {
         sections.push({
             nameSuffix: nameSuffixBuilder(sectionIndex),
             capacity: targetCapacity,
-            /** Sĩ số thực tế sau ghép gối đầu (≤ capacity/trần phòng). */
+            /** Sĩ số thực tế sau ghép gối đầu (≤ maxCapacity/trần phòng). */
             allocatedHeadcount: currentFill,
             studentGroupIds: Array.from(linkedGroups),
         });
         sectionIndex += 1;
     }
 
-    return mergeUndersizedTailSections(sections, targetCapacity);
+    return mergeUndersizedTailSections(sections, targetCapacity, maxCapacity);
 }
 
 /** Gắn sĩ số đúng với track online/COUR01 (không lấy cả pool 553 SV cho mỗi COUR01). */
@@ -394,29 +491,12 @@ function stampAllocatedSections({
     requires_scheduling = true,
     integratedSchedule = false,
 }) {
-    const profile = resolveCourseSectioningProfile(course);
-    const rhythmOptions = buildRhythmOptionsFromConfig(schedulingConfig);
-    const uniformParams = requires_scheduling
-        ? (integratedSchedule || profile.combinedLtTh
-            ? calculateIntegratedScheduleParams(
-                course,
-                rhythmOptions.maxWeeks,
-                shiftDuration,
-            )
-            : resolveSectionScheduleParams(
-                course,
-                classType,
-                shiftDuration,
-                rhythmOptions.maxWeeks,
-            ))
-        : null;
-    const schedulePlan = uniformParams
-        ? resolveScheduleRhythm(uniformParams, rhythmOptions)
-        : null;
-    const scheduleParams = schedulePlan?.scheduleParams ?? uniformParams;
-    const schedulingEvents = requires_scheduling
-        ? buildSchedulingEventsFromParams(uniformParams, shiftDuration, rhythmOptions)
-        : [];
+    const {
+        events: schedulingEvents,
+        scheduleParams,
+    } = requires_scheduling
+        ? resolveCourseSchedulingEvents(course, classType, schedulingConfig)
+        : { events: [], scheduleParams: null };
 
     return allocatedSlots
         .map((slot) => buildSectionDraft({
@@ -476,20 +556,24 @@ function generateAsyncOnlineTrack({
     });
 }
 
-/** Coursera + PC lab: COUR01 (async) + COUR01.TH1… (scheduled). */
-function generateCourseraHybridSections({
+/** Online async + buổi gặp mặt: ELN/COUR + nhóm .TH (theo cấu hình offline). */
+function generateSplitOnlineOfflineSections({
     course,
     semesterId,
     scheduleSuffix,
     studentGroups,
     schedulingConfig,
+    groupFormatter,
+    onlineCap,
+    channel,
 }) {
     const onlineTemplate = SECTIONING_TEMPLATES.ONLINE;
-    const onlineCap = resolveCourseraOnlineCapacity(schedulingConfig);
     const physicalTemplateCode = resolvePhysicalTemplateForSplit(course);
     const physicalTemplate = SECTIONING_TEMPLATES[physicalTemplateCode]
         || SECTIONING_TEMPLATES.LAB_COUPLED;
-    const physicalCourse = sliceCourseCredits(course, { practiceOnly: true });
+    const physicalCourse = resolvePracticeCredits(course) > 0
+        ? sliceCourseCredits(course, { practiceOnly: true })
+        : course;
     const practiceRoom = resolvePracticeRoomTypeReq(course, physicalTemplate);
     const thCap = physicalTemplateCode === 'MEDICAL_CLINIC'
         ? physicalTemplate.cap
@@ -498,7 +582,7 @@ function generateCourseraHybridSections({
     const onlineSlots = allocateSections(
         studentGroups,
         onlineCap,
-        (index) => formatCourseraGroupCode(index),
+        groupFormatter,
     );
 
     const onlineCourse = sliceCourseCredits(course, { theoryOnly: true });
@@ -511,7 +595,7 @@ function generateCourseraHybridSections({
         semesterId,
         scheduleSuffix,
         allocatedSlots: onlineSlots,
-        classType: resolveOnlineSectionClassType(DELIVERY_CHANNELS.COURSERA),
+        classType: resolveOnlineSectionClassType(channel),
         roomTypeReq: onlineTemplate.room,
         shiftDuration: schedulingConfig.shift_duration,
         requires_scheduling: false,
@@ -529,6 +613,7 @@ function generateCourseraHybridSections({
             slotGroups,
             thCap,
             (index) => formatCourseraPracticeGroupCode(onlineSlot.nameSuffix, index),
+            buildPracticeAllocationOptions(schedulingConfig),
         );
 
         physicalSections.push(...stampAllocatedSections({
@@ -547,20 +632,67 @@ function generateCourseraHybridSections({
     return [...onlineSections, ...physicalSections];
 }
 
-/** HYBRID: ELN async track + physical lab/theory per template_code. */
+/** Coursera + PC lab: COUR01 (async) + COUR01.TH1… (scheduled). */
+function generateCourseraHybridSections(commonArgs) {
+    return generateSplitOnlineOfflineSections({
+        ...commonArgs,
+        groupFormatter: (index) => formatCourseraGroupCode(index),
+        onlineCap: resolveCourseraOnlineCapacity(commonArgs.schedulingConfig),
+        channel: DELIVERY_CHANNELS.COURSERA,
+    });
+}
+
+/** E-learning + buổi gặp mặt: ELN01 + ELN01.TH1… */
+function generateElearningHybridSections(commonArgs) {
+    return generateSplitOnlineOfflineSections({
+        ...commonArgs,
+        groupFormatter: (index) => formatElnGroupCode(index),
+        onlineCap: resolveOnlineSectionCapacity(commonArgs.schedulingConfig),
+        channel: DELIVERY_CHANNELS.ELEARNING,
+    });
+}
+
+/** @deprecated Dùng generateCourseraHybridSections — HYBRID đã gộp vào COURSERA. */
 function generateHybridSections(commonArgs) {
     const { course } = commonArgs;
     const onlineSections = generateAsyncOnlineTrack({
         ...commonArgs,
         groupFormatter: formatElnGroupCode,
-        channel: DELIVERY_CHANNELS.HYBRID,
+        channel: DELIVERY_CHANNELS.COURSERA,
     });
 
     const physicalTemplateCode = resolvePhysicalTemplateForSplit(course);
-    const physicalCourse = sliceCourseCredits(course, { practiceOnly: true });
+    const physicalCourse = resolvePracticeCredits(course) > 0
+        ? sliceCourseCredits(course, { practiceOnly: true })
+        : course;
 
-    if (resolvePracticeCredits(physicalCourse) <= 0) {
+    if (resolvePracticeCredits(physicalCourse) <= 0 && !hasManualOfflineSchedule(course)) {
         return onlineSections;
+    }
+
+    if (resolvePracticeCredits(physicalCourse) <= 0 && hasManualOfflineSchedule(course)) {
+        const practiceRoom = resolvePracticeRoomTypeReq(course, SECTIONING_TEMPLATES.LAB_COUPLED);
+        const thCap = resolvePracticeSectionCapacity(
+            commonArgs.schedulingConfig,
+            practiceRoom,
+        );
+        const physicalSections = stampAllocatedSections({
+            course,
+            semesterId: commonArgs.semesterId,
+            scheduleSuffix: commonArgs.scheduleSuffix,
+            allocatedSlots: allocateSections(
+                commonArgs.studentGroups,
+                thCap,
+                (index) => formatTheoryGroupCode(index),
+                buildPracticeAllocationOptions(commonArgs.schedulingConfig),
+            ),
+            classType: 'TH',
+            roomTypeReq: practiceRoom,
+            shiftDuration: commonArgs.schedulingConfig.shift_duration,
+            schedulingConfig: commonArgs.schedulingConfig,
+            requires_scheduling: true,
+        });
+        return [...onlineSections, ...physicalSections];
     }
 
     const physicalSections = generatePhysicalSectionsByTemplate({
@@ -652,6 +784,7 @@ function generateStandardSections({
                 studentGroups,
                 thCap,
                 (index) => formatPracticeGroupCode(index, practiceSlotsPerTheoryGroup),
+                buildPracticeAllocationOptions(schedulingConfig),
             ),
             classType: 'TH',
             roomTypeReq: resolvePracticeRoomTypeReq(course, SECTIONING_TEMPLATES.STANDARD),
@@ -678,6 +811,7 @@ function generateLabCoupledSections({
         studentGroups,
         syncCap,
         (index) => formatTheoryGroupCode(index),
+        buildPracticeAllocationOptions(schedulingConfig),
     );
 
     if (resolveTheoryCredits(course) <= 0 && resolvePracticeCredits(course) <= 0) {
@@ -777,6 +911,9 @@ function buildSectionsForCourse({
 
     switch (channel) {
         case DELIVERY_CHANNELS.ELEARNING:
+            if (courseNeedsPhysicalOfflineSections(course)) {
+                return generateElearningHybridSections(commonArgs);
+            }
             return generateAsyncOnlineTrack({
                 ...commonArgs,
                 groupFormatter: formatElnGroupCode,
@@ -784,7 +921,7 @@ function buildSectionsForCourse({
             });
 
         case DELIVERY_CHANNELS.COURSERA:
-            if (profile.hasPractice) {
+            if (courseNeedsPhysicalOfflineSections(course)) {
                 return generateCourseraHybridSections(commonArgs);
             }
             return generateAsyncOnlineTrack({
@@ -793,13 +930,10 @@ function buildSectionsForCourse({
                 channel: DELIVERY_CHANNELS.COURSERA,
             });
 
-        case DELIVERY_CHANNELS.HYBRID:
-            return generateHybridSections(commonArgs);
-
         case DELIVERY_CHANNELS.SPECIAL:
             return [];
 
-        case DELIVERY_CHANNELS.FACE:
+        case DELIVERY_CHANNELS.OFFLINE:
         default:
             break;
     }
@@ -1110,6 +1244,7 @@ module.exports = {
     autoGenerateCourseSections,
     normalizeCohortIds,
     allocateSections,
+    computeBalancedSectionSizes,
     buildSectionsForCourse,
     generateOnlineSections,
     generateAsyncOnlineTrack,

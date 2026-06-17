@@ -11,6 +11,8 @@ import {
   resolveSectionClassType,
   formatSectionIdForExport,
   resolveExpectedEnrollment,
+  resolveTimetableRowExportDates,
+  resolveTimetableRowExportWeek,
 } from '../utils/exportFormatters'
 import { formatTimetableRoom } from '../constants/roomTypes'
 
@@ -67,7 +69,7 @@ export const buildCourseSectionExportColumns = ({ semesterLookup } = {}) => [
   },
 ]
 
-export const buildTimetableExportColumns = ({ sectionLookup } = {}) => [
+export const buildTimetableExportColumns = ({ sectionLookup, semesterLookup, roomLookup } = {}) => [
   {
     title: 'TT',
     exportValue: (_row, rowIndex) => rowIndex + 1,
@@ -144,16 +146,31 @@ export const buildTimetableExportColumns = ({ sectionLookup } = {}) => [
     title: 'Phòng học',
     exportValue: (row) => {
       const section = resolveSectionContext(row, sectionLookup)
-      return formatTimetableRoom(row.room_id, section)
+      return formatTimetableRoom(row.room_id, section, roomLookup)
+    },
+  },
+  {
+    title: 'Tuần HK',
+    exportValue: (row) => {
+      const section = resolveSectionContext(row, sectionLookup)
+      return resolveTimetableRowExportWeek(row, section, semesterLookup)
     },
   },
   {
     title: 'Ngày BĐ',
-    exportValue: (row) => formatExportDateShort(row.start_date),
+    exportValue: (row) => {
+      const section = resolveSectionContext(row, sectionLookup)
+      const { startDate } = resolveTimetableRowExportDates(row, section, semesterLookup)
+      return formatExportDateShort(startDate)
+    },
   },
   {
     title: 'Ngày KT',
-    exportValue: (row) => formatExportDateShort(row.end_date),
+    exportValue: (row) => {
+      const section = resolveSectionContext(row, sectionLookup)
+      const { endDate } = resolveTimetableRowExportDates(row, section, semesterLookup)
+      return formatExportDateShort(endDate)
+    },
   },
   {
     title: 'Giảng viên',

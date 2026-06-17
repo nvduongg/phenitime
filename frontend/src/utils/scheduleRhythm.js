@@ -1,3 +1,7 @@
+import {
+  buildOfflineSchedulePlan,
+  shouldUseOfflineSchedule,
+} from '../constants/offlineSchedule'
 import { calculateScheduleParams, resolveScheduleTypeForClass } from './periodCalculator'
 import { calculateIntegratedScheduleParams, resolveCourseSectioningProfile } from './sectioningProfile'
 
@@ -98,11 +102,22 @@ export function resolveSchedulePlanForSection(section, options = {}) {
 }
 
 export function buildSchedulingEventsForSection(section, options = {}) {
+  const course = section?.course || {}
+  const classType = String(section?.class_type || 'LT').toUpperCase()
+  const shiftDuration = Math.max(Number(options.shiftDuration) || 3, 1)
+  const maxWeeks = Math.max(Number(options.maxWeeks) || 10, 1)
+
+  if (shouldUseOfflineSchedule(course, classType)) {
+    const offlinePlan = buildOfflineSchedulePlan(course, shiftDuration, maxWeeks)
+    if (offlinePlan?.events?.length) {
+      return offlinePlan.events
+    }
+  }
+
   const plan = resolveSchedulePlanForSection(section, options)
   if (!plan) {
     return []
   }
-  const shiftDuration = Math.max(Number(options.shiftDuration) || 3, 1)
   return buildSchedulingEventsFromPlan(plan, shiftDuration)
 }
 

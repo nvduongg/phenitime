@@ -131,7 +131,7 @@ function Lecturers() {
       {
         title: 'Khoa',
         key: 'unit_name',
-        width: 240,
+        width: 280,
         ellipsis: true,
         render: (_, record) => {
           const unitName = record.unit?.unit_name
@@ -179,6 +179,8 @@ function Lecturers() {
       modalTitleEdit="Cập nhật giảng viên"
       form={crud.form}
       scrollX={1280}
+      modalWidth={780}
+      modalClassName="lecturer-form-modal"
       extraActions={
         <ImportToolbarActions onImportClick={() => setImportOpen(true)} />
       }
@@ -195,7 +197,7 @@ function Lecturers() {
         />
       }
       formContent={(editingRecord) => (
-        <>
+        <div className="course-form-grid">
           <Form.Item
             name="lecturer_id"
             label="Mã giảng viên"
@@ -223,6 +225,15 @@ function Lecturers() {
             />
           </Form.Item>
           <Form.Item
+            name="max_quota"
+            label="Định mức giảng dạy"
+            rules={[{ required: true, message: 'Vui lòng nhập định mức' }]}
+            initialValue={15}
+          >
+            <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item
+            className="course-form-grid__full lecturer-specialty-field"
             name="course_ids"
             label="Chuyên môn giảng dạy"
             tooltip="Chọn các học phần giảng viên có thể dạy — dùng cho ma trận phân công"
@@ -234,17 +245,11 @@ function Lecturers() {
               optionFilterProp="label"
               options={courseOptions}
               placeholder="Chọn học phần (có thể chọn nhiều)"
+              maxTagCount="responsive"
+              listHeight={280}
             />
           </Form.Item>
-          <Form.Item
-            name="max_quota"
-            label="Định mức giảng dạy"
-            rules={[{ required: true, message: 'Vui lòng nhập định mức' }]}
-            initialValue={15}
-          >
-            <InputNumber min={1} max={1000} style={{ width: '100%' }} />
-          </Form.Item>
-        </>
+        </div>
       )}
     />
 
