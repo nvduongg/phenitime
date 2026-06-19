@@ -1,6 +1,4 @@
-# Production / demo: image tĩnh (nginx). Mỗi lần sửa code cần --build.
-# Phát triển (hot reload): ./scripts/docker-dev.sh  hoặc
-#   docker compose -f compose.yaml -f compose.dev.yaml up -d
+# Local internal stack: docker compose up -d --build
 
 services:
   postgres-db:

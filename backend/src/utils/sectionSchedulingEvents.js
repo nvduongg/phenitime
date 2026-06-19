@@ -17,10 +17,15 @@ const { resolveCourseSectioningProfile } = require('./sectioningTemplates');
 function resolveCourseSchedulingEvents(course, classType, schedulingConfig = {}) {
     const rhythmOptions = buildRhythmOptionsFromConfig(schedulingConfig);
     const shiftDuration = rhythmOptions.shiftDuration;
-    const profile = resolveCourseSectioningProfile(course);
+    const profile = resolveCourseSectioningProfile(course, schedulingConfig);
 
     const offlinePlan = shouldUseOfflineSchedule(course, classType)
-        ? buildOfflineSchedulePlan(course, shiftDuration, rhythmOptions.maxWeeks)
+        ? buildOfflineSchedulePlan(
+            course,
+            shiftDuration,
+            rhythmOptions.maxWeeks,
+            schedulingConfig.offline_schedule_defaults,
+        )
         : null;
 
     if (offlinePlan?.events?.length) {

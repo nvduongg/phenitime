@@ -101,7 +101,7 @@ function Majors() {
         extraActions={
           <ImportToolbarActions onImportClick={() => setImportOpen(true)} />
         }
-        formContent={(editingRecord) => (
+        formContent={() => (
         <>
           <Form.Item
             name="major_code"

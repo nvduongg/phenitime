@@ -215,8 +215,10 @@ function shouldUseOfflineSchedule(course = {}, classType) {
     return courseSupportsOfflineConfig(course);
 }
 
-function buildOfflineSchedulePlan(course = {}, shiftDuration = 3, maxWeeks = 10) {
-    const rhythm = course.offline_week_rhythm || OFFLINE_WEEK_RHYTHMS.WEEKLY;
+function buildOfflineSchedulePlan(course = {}, shiftDuration = 3, maxWeeks = 10, defaults = {}) {
+    const rhythm = course.offline_week_rhythm
+        || defaults.week_rhythm
+        || OFFLINE_WEEK_RHYTHMS.WEEKLY;
     const plannedWeeks = rhythm === OFFLINE_WEEK_RHYTHMS.CUSTOM
         ? parseOfflineWeekPlan(course.offline_active_weeks, maxWeeks)
         : [];
@@ -224,14 +226,16 @@ function buildOfflineSchedulePlan(course = {}, shiftDuration = 3, maxWeeks = 10)
         ? plannedWeeks.length
         : (Number(course.offline_session_count) || 0);
     const periodsPerSession = Math.max(
-        Number(course.offline_periods_per_session) || 3,
+        Number(course.offline_periods_per_session)
+        || Number(defaults.periods_per_session)
+        || 3,
         1,
     );
 
     const weeks = resolveOfflineWeeks({
         sessionCount,
         rhythm,
-        weekInterval: course.offline_week_interval,
+        weekInterval: course.offline_week_interval || defaults.week_interval,
         activeWeeks: course.offline_active_weeks,
         maxWeeks,
     });
@@ -268,17 +272,24 @@ function buildOfflineSchedulePlan(course = {}, shiftDuration = 3, maxWeeks = 10)
     };
 }
 
-function formatOfflineScheduleSummary(course = {}, maxWeeks = 10) {
+function formatOfflineScheduleSummary(course = {}, maxWeeks = 10, defaults = {}) {
     if (!hasManualOfflineSchedule(course)) {
         return null;
     }
 
-    const periodsPerSession = Math.max(Number(course.offline_periods_per_session) || 3, 1);
-    const rhythm = course.offline_week_rhythm || OFFLINE_WEEK_RHYTHMS.WEEKLY;
+    const periodsPerSession = Math.max(
+        Number(course.offline_periods_per_session)
+        || Number(defaults.periods_per_session)
+        || 3,
+        1,
+    );
+    const rhythm = course.offline_week_rhythm
+        || defaults.week_rhythm
+        || OFFLINE_WEEK_RHYTHMS.WEEKLY;
     const weeks = resolveOfflineWeeks({
         sessionCount: course.offline_session_count,
         rhythm,
-        weekInterval: course.offline_week_interval,
+        weekInterval: course.offline_week_interval || defaults.week_interval,
         activeWeeks: course.offline_active_weeks,
         maxWeeks,
     });
@@ -294,7 +305,7 @@ function formatOfflineScheduleSummary(course = {}, maxWeeks = 10) {
     return `${weeks.length} buổi × ${periodsPerSession} tiết · ${weekLabel}`;
 }
 
-function syncCourseOfflineFields(courseData = {}) {
+function syncCourseOfflineFields(courseData = {}, defaults = {}) {
     const next = { ...courseData };
     const channel = resolveDeliveryChannel(next);
     const practiceCredits = resolvePracticeCredits(next);
@@ -330,9 +341,13 @@ function syncCourseOfflineFields(courseData = {}) {
     const periods = Number(next.offline_periods_per_session);
     next.offline_periods_per_session = Number.isFinite(periods) && periods > 0
         ? Math.floor(periods)
-        : 3;
+        : Math.floor(Number(defaults.periods_per_session) || 3);
 
-    const rhythm = String(next.offline_week_rhythm || OFFLINE_WEEK_RHYTHMS.WEEKLY).toUpperCase();
+    const rhythm = String(
+        next.offline_week_rhythm
+        || defaults.week_rhythm
+        || OFFLINE_WEEK_RHYTHMS.WEEKLY,
+    ).toUpperCase();
     next.offline_week_rhythm = Object.values(OFFLINE_WEEK_RHYTHMS).includes(rhythm)
         ? rhythm
         : OFFLINE_WEEK_RHYTHMS.WEEKLY;
@@ -341,7 +356,7 @@ function syncCourseOfflineFields(courseData = {}) {
         const interval = Number(next.offline_week_interval);
         next.offline_week_interval = Number.isFinite(interval) && interval >= 2
             ? Math.floor(interval)
-            : 2;
+            : Math.floor(Number(defaults.week_interval) || 2);
     } else {
         next.offline_week_interval = null;
     }

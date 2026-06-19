@@ -188,7 +188,7 @@ function Semesters() {
             label="Mã học kỳ"
             rules={[{ required: true, message: 'Vui lòng nhập mã học kỳ' }]}
           >
-            <Input placeholder="VD: 2025_2026_3_1" disabled={Boolean(editingRecord)} />
+            <Input placeholder="VD: 2025_2026_3" disabled={Boolean(editingRecord)} />
           </Form.Item>
           <Form.Item
             name="semester_name"

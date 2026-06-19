@@ -6,7 +6,7 @@ async function ensureSeedAdminUser(prisma) {
     const client = prisma || new PrismaClient();
     const shouldDisconnect = !prisma;
 
-    const email = (process.env.SEED_ADMIN_EMAIL || 'admin@phenikaa.edu.vn').trim().toLowerCase();
+    const email = (process.env.SEED_ADMIN_EMAIL || 'admin@phenikaa-uni.edu.vn').trim().toLowerCase();
     const password = process.env.SEED_ADMIN_PASSWORD || 'Phenitime@2026';
     const full_name = process.env.SEED_ADMIN_NAME || 'Ban Đào tạo (Đại học)';
 

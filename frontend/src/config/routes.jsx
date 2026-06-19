@@ -18,6 +18,7 @@ import CourseSections from '../pages/CourseSections/index.jsx'
 import AiScheduler from '../pages/AiScheduler/index.jsx'
 import Timetables from '../pages/Timetables/index.jsx'
 import Users from '../pages/Admin/Users.jsx'
+import SystemSettings from '../pages/Settings/index.jsx'
 import { ROLES } from '../constants/roles'
 
 export const appRoutes = [
@@ -56,7 +57,14 @@ export const appRoutes = [
           </ProtectedRoute>
         ),
       },
-      { path: 'admin/settings', element: <Navigate to="/ai-scheduler" replace /> },
+      {
+        path: 'admin/settings',
+        element: (
+          <ProtectedRoute roles={[ROLES.UNIVERSITY_TRAINING]}>
+            <SystemSettings />
+          </ProtectedRoute>
+        ),
+      },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },

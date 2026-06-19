@@ -23,6 +23,7 @@ import { usePageMeta } from '../../contexts/PageMetaContext'
 import { getTableScroll, TABLE_SCROLL_CLASS } from '../../config/table'
 import { ROLE_LABELS, ROLES, PROVISIONABLE_ROLES } from '../../constants/roles'
 import { formatUnitType } from '../../constants/unitTypes'
+import api from '../../services/api'
 
 const { Text, Paragraph } = Typography
 

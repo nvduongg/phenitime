@@ -12,6 +12,24 @@ class DataLoader:
     def __init__(self):
         self.conn = get_db_connection()
 
+    def get_semester_dates(self, semester_id):
+        """Return semester start/end dates from DB; no synthetic fallback."""
+        query = """
+            SELECT start_date, end_date
+            FROM semesters
+            WHERE semester_id = %s
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(query, (semester_id,))
+                row = cursor.fetchone()
+            if not row:
+                return None, None
+            return row.get('start_date'), row.get('end_date')
+        except Exception as e:
+            print(f"Lỗi khi truy vấn ngày học kỳ: {e}")
+            return None, None
+
     def get_course_sections(self, semester_id):
         """Lấy danh sách lớp học phần KÈM THEO danh sách lớp sinh viên (Student Groups)"""
         query_sections = """
@@ -119,10 +137,14 @@ class DataLoader:
         # Merge với df_events để lấy lại section_id và duration (period_count) gốc
         df_final = pd.merge(df_result, df_events[['event_id', 'section_id', 'duration']], on='event_id', how='left')
 
-        # Câu lệnh Insert (Mặc định ngày bắt đầu/kết thúc do chưa có config cụ thể, ta gán mốc giả định)
+        start_date, end_date = self.get_semester_dates(semester_id)
+        if not start_date or not end_date:
+            print(f"Học kỳ {semester_id} chưa có ngày bắt đầu/kết thúc hợp lệ. Không lưu TKB.")
+            return False
+
         insert_query = """
             INSERT INTO timetables (section_id, room_id, day_of_week, start_period, period_count, start_date, end_date)
-            VALUES (%s, %s, %s, %s, %s, '2026-04-06', '2026-05-10')
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         
         try:
@@ -143,7 +165,9 @@ class DataLoader:
                         row['room_id'],
                         row['day'],
                         row['start_period'],
-                        row['duration']
+                        row['duration'],
+                        start_date,
+                        end_date,
                     ))
             
             # Phải có commit thì PostgreSQL mới thực sự lưu xuống ổ cứng

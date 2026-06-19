@@ -9,6 +9,7 @@ import {
   parseToWeeklyCounts,
   sumWeeklyCounts,
 } from '../../constants/offlineSchedule'
+import { DEFAULT_TEACHING_WEEKS } from '../../utils/semesterDates'
 
 function OfflineWeekPlanField({ value, onChange }) {
   const form = Form.useFormInstance()
@@ -22,7 +23,7 @@ function OfflineWeekPlanField({ value, onChange }) {
   return <OfflineWeekPlanGrid value={value} onChange={handleChange} />
 }
 
-function CourseOfflineScheduleFields({ form }) {
+function CourseOfflineScheduleFields({ form, defaults = {}, maxWeeks = DEFAULT_TEACHING_WEEKS }) {
   const classType = Form.useWatch('class_type', form)
   const practiceCredits = Form.useWatch('practice_credits', form)
   const sessionCount = Form.useWatch('offline_session_count', form)
@@ -36,13 +37,17 @@ function CourseOfflineScheduleFields({ form }) {
     return null
   }
 
-  const preview = formatOfflineSchedulePreview({
-    offline_session_count: sessionCount,
-    offline_periods_per_session: periodsPerSession,
-    offline_week_rhythm: weekRhythm,
-    offline_week_interval: weekInterval,
-    offline_active_weeks: activeWeeks,
-  })
+  const preview = formatOfflineSchedulePreview(
+    {
+      offline_session_count: sessionCount,
+      offline_periods_per_session: periodsPerSession,
+      offline_week_rhythm: weekRhythm,
+      offline_week_interval: weekInterval,
+      offline_active_weeks: activeWeeks,
+    },
+    maxWeeks,
+    defaults,
+  )
 
   const channel = normalizeDeliveryChannel(classType)
   const isOnlineWithOffline = channel === 'COURSERA' || channel === 'ELEARNING'
@@ -71,7 +76,7 @@ function CourseOfflineScheduleFields({ form }) {
         <Form.Item
           name="offline_periods_per_session"
           label="Tiết/buổi"
-          initialValue={3}
+          initialValue={defaults.periods_per_session || 3}
         >
           <InputNumber min={1} max={6} step={1} style={{ width: '100%' }} />
         </Form.Item>
@@ -79,7 +84,7 @@ function CourseOfflineScheduleFields({ form }) {
         <Form.Item
           name="offline_week_rhythm"
           label="Nhịp tuần"
-          initialValue={OFFLINE_WEEK_RHYTHMS.WEEKLY}
+          initialValue={defaults.week_rhythm || OFFLINE_WEEK_RHYTHMS.WEEKLY}
         >
           <Select options={OFFLINE_WEEK_RHYTHM_OPTIONS} />
         </Form.Item>
@@ -102,7 +107,7 @@ function CourseOfflineScheduleFields({ form }) {
           <Form.Item
             name="offline_week_interval"
             label="Cách N tuần"
-            initialValue={2}
+            initialValue={defaults.week_interval || 2}
             rules={[{ required: true, message: 'Nhập N' }]}
           >
             <InputNumber min={2} max={8} step={1} style={{ width: '100%' }} />

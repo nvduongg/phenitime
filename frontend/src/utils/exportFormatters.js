@@ -153,9 +153,7 @@ export const sectionMatchesCohortFilter = (section, cohortFilter = []) => {
 }
 
 import {
-  calculateScheduleParams,
   resolveSectionScheduleDisplay,
-  resolveScheduleTypeForClass,
 } from './periodCalculator'
 import {
   buildSchedulingEventsForSection,
@@ -172,7 +170,6 @@ import {
   resolveCourseSectioningProfile,
 } from './sectioningProfile'
 import {
-  formatSectionIdForExport,
   isAsyncOnlineExportSection,
   resolveExportGroupSortKey,
 } from './sectionExportFormat'

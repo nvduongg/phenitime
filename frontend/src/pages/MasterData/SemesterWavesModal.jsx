@@ -24,6 +24,7 @@ function SemesterWavesModal({ open, semester, onClose }) {
   const [cohortOptions, setCohortOptions] = useState([])
   const [cohortIds, setCohortIds] = useState([])
   const [teachingWeeks, setTeachingWeeks] = useState(DEFAULT_TEACHING_WEEKS)
+  const [waveSuggestion, setWaveSuggestion] = useState({})
 
   useEffect(() => {
     getCohorts()
@@ -47,6 +48,7 @@ function SemesterWavesModal({ open, semester, onClose }) {
       .then((result) => {
         const weeks = Number(result.data?.max_teaching_weeks)
         if (weeks > 0) setTeachingWeeks(weeks)
+        setWaveSuggestion(result.data?.wave_suggestion || {})
       })
       .catch(() => {})
   }, [])
@@ -81,10 +83,12 @@ function SemesterWavesModal({ open, semester, onClose }) {
       return
     }
 
-    const suggested = suggestWavesFromCohorts(cohortIds, teachingWeeks)
+    const suggested = suggestWavesFromCohorts(cohortIds, teachingWeeks, waveSuggestion)
     form.setFieldsValue({ waves: suggested })
+    const ratio = Number(waveSuggestion.week_gap_ratio)
+    const weekGap = Math.ceil(teachingWeeks * (Number.isFinite(ratio) && ratio > 0 ? ratio : 0.5))
     message.info(
-      `Đã gợi ý ${suggested.length} đợt (mỗi niên khóa 1 đợt, lệch ~${Math.ceil(teachingWeeks / 2)} tuần/HK). `
+      `Đã gợi ý ${suggested.length} đợt (lệch ~${weekGap} tuần/HK). `
       + 'Bạn có thể gộp niên khóa vào cùng đợt trước khi lưu.',
     )
   }

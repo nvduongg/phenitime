@@ -9,7 +9,7 @@ Hệ thống hỗ trợ **sinh lớp học phần** và **xếp thời khóa bi�
 | `frontend/` | React 19, Vite, Ant Design | Giao diện quản trị, dashboard, xuất Excel, xếp tay TKB |
 | `backend/` | Node.js, Express, Prisma, BullMQ | REST API, nghiệp vụ, hàng đợi xếp lịch bất đồng bộ |
 | `core/` | Python, FastAPI, OR-Tools CP-SAT | Engine xếp TKB (3 phase: cứng → nới lỏng → LNS) |
-| `compose.yaml` + `compose.dev.yaml` | Docker Compose | Hạ tầng; dev = hot reload, prod = nginx build |
+| `compose.yaml` | Docker Compose | Hạ tầng local nội bộ: Postgres, Redis, Core, Backend, Frontend nginx |
 
 ```
 Frontend (8080 hoặc 5173) ──► Backend (5000) ──► PostgreSQL
@@ -27,26 +27,7 @@ Frontend (8080 hoặc 5173) ──► Backend (5000) ──► PostgreSQL
 
 ## Cài đặt nhanh
 
-### Phát triển với Docker (hot reload — khuyến nghị khi sửa code)
-
-Image production **đóng gói sẵn** mã nguồn; mỗi lần đổi file phải `docker compose up -d --build`. Khi đang code, dùng overlay dev:
-
-```bash
-cp .env.example .env
-./scripts/docker-dev.sh --build   # lần đầu hoặc sau khi đổi package.json
-./scripts/docker-dev.sh           # các lần sau — chỉ khởi động, không rebuild
-```
-
-| | Production (`docker-up.sh`) | Dev (`docker-dev.sh`) |
-|--|--|--|
-| Frontend | nginx :8080, build tĩnh | Vite :5173, HMR |
-| Backend | `node` trong image | nodemon + mount `backend/src` |
-| Core | image cố định | uvicorn `--reload` |
-| Sau khi sửa `.jsx` / `.js` | Cần `--build` | Tự reload |
-
-Mở http://localhost:5173 (API proxy qua Vite tới backend). Chỉ chạy lại `--build` khi đổi `package.json` hoặc Dockerfile.
-
-### Chạy toàn bộ bằng Docker production (demo / triển khai)
+### Chạy toàn bộ bằng Docker Compose
 
 Yêu cầu: Docker & Docker Compose.
 
@@ -65,7 +46,7 @@ Sau khi các container healthy, mở http://localhost:8080 và đăng nhập (t�
 
 | | |
 |--|--|
-| Email | `admin@phenikaa.edu.vn` (đổi bằng `SEED_ADMIN_EMAIL` trong `.env`) |
+| Email | `admin@phenikaa-uni.edu.vn` (đổi bằng `SEED_ADMIN_EMAIL` trong `.env`) |
 | Mật khẩu | `Phenitime@2026` (đổi bằng `SEED_ADMIN_PASSWORD`) |
 
 **Không cần** vào thư mục `backend/` chạy `prisma migrate` hay `npm run seed` khi dùng Docker — container backend tự migrate DB và tạo admin (xem `docker-entrypoint.sh` + khởi động server).
@@ -81,7 +62,7 @@ Nạp thêm dữ liệu demo (chỉ khi cần, tùy chọn — hiện `seed` cũ
 docker compose exec backend npm run seed
 ```
 
-File mẫu import Excel (`frontend/public/templates/`) **không** nằm trên git; Docker tự sinh khi build image frontend. Khi dev local, chạy `cd backend && npm run generate:templates` trước khi cần nút “Tải file mẫu”.
+File mẫu import Excel (`frontend/public/templates/`) **không** nằm trên git; Docker tự sinh khi build image frontend. Khi chạy thủ công ngoài Docker, chạy `cd backend && npm run generate:templates` trước khi cần nút “Tải file mẫu”.
 
 Xem log: `docker compose logs -f` — Dừng: `docker compose down`
 

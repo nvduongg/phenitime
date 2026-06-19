@@ -68,7 +68,10 @@ export const menuItems = [
     key: 'admin',
     icon: <TeamOutlined />,
     label: 'Quản trị hệ thống',
-    children: [{ key: '/admin/users', label: 'Tài khoản người dùng' }],
+    children: [
+      { key: '/admin/users', label: 'Tài khoản người dùng' },
+      { key: '/admin/settings', label: 'Cấu hình hệ thống' },
+    ],
   },
 ]
 

@@ -77,8 +77,8 @@ export function resolveCourseSectioningProfile(course = {}) {
 
   const usesPracticeSuffix = splitsLtTh
 
-  let theoryRoomType = 'LT'
-  let practiceRoomType = 'TH'
+  let theoryRoomType
+  let practiceRoomType
 
   switch (templateCode) {
     case 'LAB_COUPLED':

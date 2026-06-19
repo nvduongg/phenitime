@@ -1,4 +1,3 @@
-const fs = require('fs');
 const xlsx = require('xlsx');
 const { parseCourseIdList } = require('./parseCourseIdList');
 
@@ -103,7 +102,8 @@ function pickImportNumber(row, columnIndex, pickRowValue, headerKeys, fallback =
     return fallback;
 }
 
-function parseLecturerImportRows(file, pickRowValue) {
+function parseLecturerImportRows(file, pickRowValue, options = {}) {
+    const defaultMaxQuota = Number(options.defaultMaxQuota) || 15;
     const matrix = readImportMatrix(file);
     const headerRowIndex = findLecturerHeaderRowIndex(matrix);
     if (headerRowIndex < 0) return [];
@@ -137,7 +137,7 @@ function parseLecturerImportRows(file, pickRowValue) {
                 LECTURER_IMPORT_COLUMN.max_quota,
                 pickRowValue,
                 ['Định mức', 'max_quota'],
-                15,
+                defaultMaxQuota,
             ),
             course_ids: parseCourseIdList(
                 pickImportCell(row, LECTURER_IMPORT_COLUMN.specialties, pickRowValue, [
@@ -148,49 +148,7 @@ function parseLecturerImportRows(file, pickRowValue) {
         .filter((item) => item.lecturer_id && item.lecturer_name && item.unit_id);
 }
 
-function parseLecturerImportMatrixFromPath(filePath) {
-    const matrix = readImportMatrix(filePath);
-    const headerRowIndex = findLecturerHeaderRowIndex(matrix);
-    if (headerRowIndex < 0) return [];
-
-    return matrix
-        .slice(headerRowIndex + 1)
-        .filter((cells) => Array.isArray(cells) && isValidImportCell(cells[LECTURER_IMPORT_COLUMN.lecturer_id]))
-        .map((cells) => ({
-            lecturer_id: String(cells[LECTURER_IMPORT_COLUMN.lecturer_id] || '').trim().toUpperCase(),
-            lecturer_name: String(cells[LECTURER_IMPORT_COLUMN.lecturer_name] || '').trim(),
-            unit_id: String(cells[LECTURER_IMPORT_COLUMN.unit_id] || '').trim().toUpperCase(),
-            max_quota: Number(cells[LECTURER_IMPORT_COLUMN.max_quota]) || 15,
-            course_ids: parseCourseIdList(cells[LECTURER_IMPORT_COLUMN.specialties]),
-        }))
-        .filter((row) => row.lecturer_id && row.lecturer_name && row.unit_id);
-}
-
-function parseLecturerImportTsvFromPath(filePath) {
-    const raw = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
-    const matrix = raw
-        .trim()
-        .split(/\r?\n/)
-        .map((line) => line.split('\t'));
-    const headerRowIndex = findLecturerHeaderRowIndex(matrix);
-    if (headerRowIndex < 0) return [];
-
-    return matrix
-        .slice(headerRowIndex + 1)
-        .filter((cells) => isValidImportCell(cells[LECTURER_IMPORT_COLUMN.lecturer_id]))
-        .map((cells) => ({
-            lecturer_id: String(cells[LECTURER_IMPORT_COLUMN.lecturer_id] || '').trim().toUpperCase(),
-            lecturer_name: String(cells[LECTURER_IMPORT_COLUMN.lecturer_name] || '').trim(),
-            unit_id: String(cells[LECTURER_IMPORT_COLUMN.unit_id] || '').trim().toUpperCase(),
-            max_quota: Number(cells[LECTURER_IMPORT_COLUMN.max_quota]) || 15,
-            course_ids: parseCourseIdList(cells[LECTURER_IMPORT_COLUMN.specialties]),
-        }))
-        .filter((row) => row.lecturer_id && row.lecturer_name && row.unit_id);
-}
-
 module.exports = {
     LECTURER_IMPORT_COLUMN,
     parseLecturerImportRows,
-    parseLecturerImportMatrixFromPath,
-    parseLecturerImportTsvFromPath,
 };

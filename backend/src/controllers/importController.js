@@ -23,6 +23,7 @@ const {
 const { parseCourseIdList } = require('../utils/parseCourseIdList');
 const { parseLecturerImportRows } = require('../utils/lecturerImportRows');
 const { normalizeDeliveryChannelInput } = require('../utils/deliveryChannels');
+const { getSchedulingConfig } = require('../services/system-config.service');
 
 function parseUploadRows(file) {
     const workbook = xlsx.read(file.buffer, { type: 'buffer' });
@@ -307,6 +308,8 @@ exports.importCourses = async (req, res) => {
             return res.status(400).json({ status: 'fail', message: 'Vui lòng chọn một file Excel/CSV để upload' });
         }
 
+        const schedulingConfig = await getSchedulingConfig(prisma);
+        const importDefaults = schedulingConfig.import_defaults || {};
         const rows = parseCourseImportRows(req.file);
         const coursesToInsert = [];
         const legacyUnitCodes = [];
@@ -323,17 +326,17 @@ exports.importCourses = async (req, res) => {
             const classType = normalizeClassType(
                 pickImportCell(row, COURSE_IMPORT_COLUMN.class_type, pickRowValue, [
                     'Hình thức học', 'class_type',
-                ]) || 'LT',
+                ]) || importDefaults.course_class_type,
             );
             const roomType = normalizeRoomType(
                 pickImportCell(row, COURSE_IMPORT_COLUMN.room_type, pickRowValue, [
                     'Yêu cầu phòng', 'Loại phòng', 'Loại phòng mặc định', 'Địa điểm học', 'room_type',
-                ]) || 'LT',
+                ]) || importDefaults.course_room_type,
             );
             const templateCode = resolveCourseTemplateCode({
                 template_code: pickImportCell(row, COURSE_IMPORT_COLUMN.template_code, pickRowValue, [
                     'Mẫu sinh lớp', 'Template', 'template_code',
-                ]) || 'STANDARD',
+                ]) || importDefaults.course_template_code,
             });
 
             if (!courseId || !courseName) return;
@@ -357,21 +360,21 @@ exports.importCourses = async (req, res) => {
                     COURSE_IMPORT_COLUMN.credits,
                     pickRowValue,
                     ['Tổng tín chỉ', 'credits'],
-                    3,
+                    importDefaults.course_credits,
                 ),
                 theory_credits: pickImportNumber(
                     row,
                     COURSE_IMPORT_COLUMN.theory_credits,
                     pickRowValue,
                     ['Tín chỉ lý thuyết', 'TC Lý thuyết', 'theory_credits'],
-                    0,
+                    importDefaults.course_theory_credits,
                 ),
                 practice_credits: pickImportNumber(
                     row,
                     COURSE_IMPORT_COLUMN.practice_credits,
                     pickRowValue,
                     ['Tín chỉ thực hành', 'TC Thực hành', 'practice_credits'],
-                    0,
+                    importDefaults.course_practice_credits,
                 ),
                 class_type: classType,
                 room_type: roomType,
@@ -405,7 +408,7 @@ exports.importCourses = async (req, res) => {
                 offline_active_weeks: pickImportCell(row, COURSE_IMPORT_COLUMN.offline_active_weeks, pickRowValue, [
                     'Tuần offline', 'offline_active_weeks',
                 ]),
-            })));
+            }), schedulingConfig.offline_schedule_defaults));
         });
 
         if (legacyUnitCodes.length) {
@@ -556,7 +559,10 @@ exports.importLecturers = async (req, res) => {
             return res.status(400).json({ status: 'fail', message: 'Vui lòng chọn một file Excel/CSV để upload' });
         }
 
-        const parsedRows = parseLecturerImportRows(req.file, pickRowValue);
+        const schedulingConfig = await getSchedulingConfig(prisma);
+        const parsedRows = parseLecturerImportRows(req.file, pickRowValue, {
+            defaultMaxQuota: schedulingConfig.import_defaults?.lecturer_max_quota,
+        });
         const lecturersToUpsert = parsedRows.map((row) => ({
             lecturer_id: row.lecturer_id,
             lecturer_name: row.lecturer_name,
@@ -732,6 +738,10 @@ exports.importCourseSections = async (req, res) => {
             });
         }
 
+        const schedulingConfig = await getSchedulingConfig(prisma);
+        const defaultImportedCapacity = Number(schedulingConfig.import_defaults?.course_section_capacity)
+            || Number(schedulingConfig.default_th_capacity)
+            || 40;
         const parsedRows = [];
         const errors = [];
 
@@ -751,7 +761,7 @@ exports.importCourseSections = async (req, res) => {
             const capacity = pickRowNumber(
                 row,
                 ['Số SV dự kiến', 'Số SV dự kiến ', 'Số lượng', 'Sĩ số', 'Sĩ số dự kiến'],
-                40,
+                defaultImportedCapacity,
             );
             const lecturerRaw = pickRowValue(row, ['Giảng Viên 1', 'Giảng viên', 'Giảng Viên']);
             const groupTokens = parseStudentGroupTokens(
@@ -765,7 +775,8 @@ exports.importCourseSections = async (req, res) => {
                 semester_id,
                 lecturer_id: parseLecturerId(lecturerRaw),
                 class_type: normalizeClassType(
-                    pickRowValue(row, ['Hình thức học', 'Hình thức']) || 'LT',
+                    pickRowValue(row, ['Hình thức học', 'Hình thức'])
+                    || schedulingConfig.import_defaults?.course_class_type,
                 ),
                 capacity,
                 groupTokens,

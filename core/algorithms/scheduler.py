@@ -84,6 +84,18 @@ class TimetableScheduler:
             ),
             1,
         )
+        self.soft_capacity_ratio = min(
+            1.0,
+            max(0.1, float(config.get("soft_capacity_ratio", self.SOFT_CAPACITY_RATIO))),
+        )
+        self.relaxed_max_shifts_per_day = max(
+            int(config.get("relaxed_max_shifts_per_day", self.RELAXED_MAX_SHIFTS_PER_DAY)),
+            self.max_lecturer_shifts_per_day,
+        )
+        self.virtual_room_capacity = max(
+            int(config.get("virtual_room_capacity", 9999)),
+            1,
+        )
 
         configured_shifts = [
             int(shift)
@@ -175,7 +187,7 @@ class TimetableScheduler:
             virtual_room = pd.DataFrame(
                 [{
                     "room_id": self.VIRTUAL_ROOM_ID,
-                    "capacity": 9999,
+                    "capacity": self.virtual_room_capacity,
                     "room_type": "ONLINE",
                 }]
             )
@@ -253,7 +265,7 @@ class TimetableScheduler:
         if event_cap <= 0:
             return True
 
-        min_room_cap = int(event_cap * self.SOFT_CAPACITY_RATIO)
+        min_room_cap = int(event_cap * self.soft_capacity_ratio)
         if room_cap < min_room_cap:
             return False
 
@@ -276,7 +288,7 @@ class TimetableScheduler:
         if event_cap <= 0:
             return False
 
-        min_room_cap = int(event_cap * self.SOFT_CAPACITY_RATIO)
+        min_room_cap = int(event_cap * self.soft_capacity_ratio)
         return min_room_cap <= room_cap < event_cap
 
     def _fits_shift(self, event, shift):
@@ -1184,7 +1196,7 @@ class TimetableScheduler:
         is_fatigued = {}
         hc7_soft_count = 0
         strict_cap = self.max_lecturer_shifts_per_day
-        relaxed_cap = self.RELAXED_MAX_SHIFTS_PER_DAY
+        relaxed_cap = self.relaxed_max_shifts_per_day
 
         for (lecturer_id, day), vars_on_day in lecturer_day_index.items():
             if not vars_on_day:

@@ -197,14 +197,19 @@ export function sumWeeklyCounts(counts = []) {
   return counts.reduce((total, count) => total + (Number(count) || 0), 0)
 }
 
-export function formatOfflineSchedulePreview(values = {}, maxWeeks = 10) {
-  const periods = Math.max(Number(values.offline_periods_per_session) || 3, 1)
-  const rhythm = values.offline_week_rhythm || OFFLINE_WEEK_RHYTHMS.WEEKLY
+export function formatOfflineSchedulePreview(values = {}, maxWeeks = 10, defaults = {}) {
+  const periods = Math.max(
+    Number(values.offline_periods_per_session)
+      || Number(defaults.periods_per_session)
+      || 3,
+    1,
+  )
+  const rhythm = values.offline_week_rhythm || defaults.week_rhythm || OFFLINE_WEEK_RHYTHMS.WEEKLY
   const sessionCount = Number(values.offline_session_count)
   const weeks = resolveOfflineWeeks({
     sessionCount,
     rhythm,
-    weekInterval: values.offline_week_interval,
+    weekInterval: values.offline_week_interval || defaults.week_interval,
     activeWeeks: values.offline_active_weeks,
     maxWeeks,
   })
@@ -264,8 +269,8 @@ export function shouldUseOfflineSchedule(course = {}, classType = 'TH') {
   return courseHasOfflineScheduleSupport(course)
 }
 
-export function buildOfflineSchedulePlan(course = {}, shiftDuration = 3, maxWeeks = 10) {
-  const rhythm = course.offline_week_rhythm || OFFLINE_WEEK_RHYTHMS.WEEKLY
+export function buildOfflineSchedulePlan(course = {}, shiftDuration = 3, maxWeeks = 10, defaults = {}) {
+  const rhythm = course.offline_week_rhythm || defaults.week_rhythm || OFFLINE_WEEK_RHYTHMS.WEEKLY
   const plannedWeeks = rhythm === OFFLINE_WEEK_RHYTHMS.CUSTOM
     ? parseOfflineWeekPlan(course.offline_active_weeks, maxWeeks)
     : []
@@ -273,14 +278,17 @@ export function buildOfflineSchedulePlan(course = {}, shiftDuration = 3, maxWeek
     ? plannedWeeks.length
     : (Number(course.offline_session_count) || 0)
   const periodsPerSession = Math.max(
-    Number(course.offline_periods_per_session) || Number(shiftDuration) || 3,
+    Number(course.offline_periods_per_session)
+      || Number(defaults.periods_per_session)
+      || Number(shiftDuration)
+      || 3,
     1,
   )
 
   const weeks = resolveOfflineWeeks({
     sessionCount,
     rhythm,
-    weekInterval: course.offline_week_interval,
+    weekInterval: course.offline_week_interval || defaults.week_interval,
     activeWeeks: course.offline_active_weeks,
     maxWeeks,
   })

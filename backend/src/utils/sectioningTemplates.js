@@ -37,6 +37,23 @@ const SECTIONING_TEMPLATES = {
 const TEMPLATE_CODES = Object.freeze(Object.keys(SECTIONING_TEMPLATES));
 const DEFAULT_TEMPLATE_CODE = 'STANDARD';
 
+function getConfiguredTemplates(config = {}) {
+    const configured = config?.sectioning_templates;
+    if (!configured || typeof configured !== 'object') {
+        return SECTIONING_TEMPLATES;
+    }
+
+    return Object.fromEntries(
+        Object.entries(SECTIONING_TEMPLATES).map(([code, template]) => [
+            code,
+            {
+                ...template,
+                ...(configured[code] && typeof configured[code] === 'object' ? configured[code] : {}),
+            },
+        ]),
+    );
+}
+
 function normalizeTemplateCode(code) {
     return String(code ?? DEFAULT_TEMPLATE_CODE).trim().toUpperCase();
 }
@@ -46,9 +63,9 @@ function resolveCourseTemplateCode(course) {
     return TEMPLATE_CODES.includes(code) ? code : DEFAULT_TEMPLATE_CODE;
 }
 
-function resolveTemplateConfig(templateCode) {
+function resolveTemplateConfig(templateCode, config = {}) {
     const code = resolveCourseTemplateCode({ template_code: templateCode });
-    return SECTIONING_TEMPLATES[code];
+    return getConfiguredTemplates(config)[code] || SECTIONING_TEMPLATES[code];
 }
 
 /** STANDARD template: course default room when practice-type, else template TH room. */
@@ -67,9 +84,9 @@ function isSpecialTemplate(templateCode) {
     return resolveCourseTemplateCode({ template_code: templateCode }) === 'SPECIAL';
 }
 
-function skipsAutoGenerateForTemplate(templateCode) {
+function skipsAutoGenerateForTemplate(templateCode, config = {}) {
     const code = resolveCourseTemplateCode({ template_code: templateCode });
-    return Boolean(SECTIONING_TEMPLATES[code]?.skipsAutoGenerate);
+    return Boolean(resolveTemplateConfig(code, config)?.skipsAutoGenerate);
 }
 
 function resolveTheoryCredits(course = {}) {
@@ -88,9 +105,10 @@ function formatCoupledPracticeGroupCode(baseGroupCode) {
  * Derive sectioning rules from the 3 course metadata columns:
  * Hình thức (class_type), Mẫu sinh lớp (template_code), Loại phòng mặc định.
  */
-function resolveCourseSectioningProfile(course = {}) {
+function resolveCourseSectioningProfile(course = {}, config = {}) {
     const templateCode = resolveCourseTemplateCode(course);
-    const template = SECTIONING_TEMPLATES[templateCode] || SECTIONING_TEMPLATES.STANDARD;
+    const templates = getConfiguredTemplates(config);
+    const template = templates[templateCode] || templates.STANDARD || SECTIONING_TEMPLATES.STANDARD;
     const theoryCredits = resolveTheoryCredits(course);
     const practiceCredits = resolvePracticeCredits(course);
     const defaultRoom = getCourseDefaultRoomType(course);
@@ -184,6 +202,7 @@ module.exports = {
     SECTIONING_TEMPLATES,
     TEMPLATE_CODES,
     DEFAULT_TEMPLATE_CODE,
+    getConfiguredTemplates,
     normalizeTemplateCode,
     resolveCourseTemplateCode,
     resolveTemplateConfig,

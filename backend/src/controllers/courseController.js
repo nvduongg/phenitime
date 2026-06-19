@@ -5,10 +5,23 @@ const {
     syncCourseOfflineFields,
     validateOfflineSchedule,
 } = require('../utils/offlineScheduleConfig');
+const { getSchedulingConfig } = require('../services/system-config.service');
 const prisma = new PrismaClient();
 
-function prepareCoursePayload(body = {}) {
+async function prepareCoursePayload(body = {}) {
+    const schedulingConfig = await getSchedulingConfig(prisma);
+    const importDefaults = schedulingConfig.import_defaults || {};
     const data = syncCourseCreditFields({ ...body });
+    if (!data.class_type) {
+        data.class_type = importDefaults.course_class_type;
+    }
+    if (!data.room_type && !data.default_room_type) {
+        data.room_type = importDefaults.course_room_type;
+        data.default_room_type = importDefaults.course_room_type;
+    }
+    if (!data.template_code) {
+        data.template_code = importDefaults.course_template_code;
+    }
     if (data.room_type && !data.default_room_type) {
         data.default_room_type = data.room_type;
     }
@@ -18,7 +31,7 @@ function prepareCoursePayload(body = {}) {
     if (data.class_type) {
         data.class_type = normalizeDeliveryChannelInput(data.class_type);
     }
-    return syncCourseOfflineFields(data);
+    return syncCourseOfflineFields(data, schedulingConfig.offline_schedule_defaults);
 }
 
 exports.getAllCourses = async (req, res) => {
@@ -34,19 +47,19 @@ exports.getAllCourses = async (req, res) => {
 
 exports.createCourse = async (req, res) => {
     try {
-        const data = prepareCoursePayload(req.body);
+        const data = await prepareCoursePayload(req.body);
         const offlineError = validateOfflineSchedule(data);
         if (offlineError) {
             return res.status(400).json({ status: 'fail', message: offlineError });
         }
 
-        const resolvedRoomType = data.default_room_type || data.room_type || 'LT';
+        const resolvedRoomType = data.default_room_type || data.room_type;
         const newCourse = await prisma.course.create({
             data: {
                 ...data,
                 room_type: resolvedRoomType,
                 default_room_type: resolvedRoomType,
-                template_code: data.template_code || 'STANDARD',
+                template_code: data.template_code,
             },
         });
         res.status(201).json({ status: 'success', data: newCourse });
@@ -60,7 +73,7 @@ exports.createCourse = async (req, res) => {
 exports.updateCourse = async (req, res) => {
     try {
         const { id } = req.params;
-        const data = prepareCoursePayload(req.body);
+        const data = await prepareCoursePayload(req.body);
         const offlineError = validateOfflineSchedule(data);
         if (offlineError) {
             return res.status(400).json({ status: 'fail', message: offlineError });

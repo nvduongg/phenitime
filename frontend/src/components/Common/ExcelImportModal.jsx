@@ -64,7 +64,7 @@ function ExcelImportModal({
       message.success(response.data?.message || 'Import dữ liệu thành công')
       handleClose()
       onSuccess?.()
-    } catch (error) {
+    } catch {
       // Network/server errors are surfaced by the axios interceptor
     } finally {
       setUploading(false)

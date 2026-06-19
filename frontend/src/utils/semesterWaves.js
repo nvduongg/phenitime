@@ -78,18 +78,29 @@ export function resolveWaveStartWeek(section, waves = []) {
  * Mỗi niên khóa → 1 đợt; tuần BĐ lệch nhau theo max_teaching_weeks (gối ~50% HK).
  * Người dùng có thể gộp/tách đợt trước khi lưu.
  */
-export function suggestWavesFromCohorts(cohortIds = [], maxTeachingWeeks = 10) {
+export function suggestWavesFromCohorts(cohortIds = [], maxTeachingWeeks = 10, options = {}) {
   const ids = normalizeCohortIdList(cohortIds).sort((a, b) => a.localeCompare(b, 'vi'))
   if (!ids.length) {
     return []
   }
 
   const weeks = Math.max(Number(maxTeachingWeeks) || 10, 1)
-  const weekGap = Math.max(1, Math.ceil(weeks / 2))
+  const ratio = Number(options.week_gap_ratio)
+  const weekGap = Math.max(1, Math.ceil(weeks * (Number.isFinite(ratio) && ratio > 0 ? ratio : 0.5)))
+  const prefix = String(options.name_prefix || 'Đợt').trim() || 'Đợt'
+
+  if (options.one_cohort_per_wave === false) {
+    return [{
+      wave_order: 1,
+      wave_name: `${prefix} 1`,
+      start_week: 1,
+      cohort_ids: ids,
+    }]
+  }
 
   return ids.map((cohortId, index) => ({
     wave_order: index + 1,
-    wave_name: `Đợt ${index + 1}`,
+    wave_name: `${prefix} ${index + 1}`,
     start_week: 1 + index * weekGap,
     cohort_ids: [cohortId],
   }))

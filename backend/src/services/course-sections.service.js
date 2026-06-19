@@ -21,6 +21,7 @@ const {
 } = require('../utils/deliveryChannels');
 const {
     SECTIONING_TEMPLATES,
+    resolveTemplateConfig,
     resolveCourseTemplateCode,
     skipsAutoGenerateForTemplate,
     resolveStandardPracticeRoom,
@@ -94,7 +95,7 @@ function resolveOnlineSectionCapacity(schedulingConfig) {
     if (Number.isFinite(configured) && configured > 0) {
         return configured;
     }
-    return SECTIONING_TEMPLATES.ONLINE.cap;
+    return resolveTemplateConfig('ONLINE', schedulingConfig).cap;
 }
 
 function resolveLtSectionCapacity(schedulingConfig) {
@@ -102,7 +103,7 @@ function resolveLtSectionCapacity(schedulingConfig) {
     if (Number.isFinite(configured) && configured > 0) {
         return configured;
     }
-    return SECTIONING_TEMPLATES.STANDARD.ltCap;
+    return resolveTemplateConfig('STANDARD', schedulingConfig).ltCap;
 }
 
 function resolveThSectionCapacity(schedulingConfig) {
@@ -110,7 +111,7 @@ function resolveThSectionCapacity(schedulingConfig) {
     if (Number.isFinite(configured) && configured > 0) {
         return configured;
     }
-    return SECTIONING_TEMPLATES.STANDARD.thCap;
+    return resolveTemplateConfig('STANDARD', schedulingConfig).thCap;
 }
 
 /** Trần cứng mỗi lớp TH/PM khi xếp TKB (phòng thực hành thường ≤ 50 chỗ). */
@@ -131,14 +132,14 @@ function resolvePracticeSectionCapacity(schedulingConfig, roomTypeReq) {
 
     if (['PC', 'PM', 'TH', 'LAB'].includes(normalized)) {
         const conservativePcCap = Math.min(
-            getCapacityForRoomType('PM'),
-            getCapacityForRoomType('PC'),
+            getCapacityForRoomType('PM', schedulingConfig),
+            getCapacityForRoomType('PC', schedulingConfig),
         );
         return Math.min(configured, conservativePcCap);
     }
 
     if (isPracticeRoomType(roomTypeReq)) {
-        return Math.min(configured, getCapacityForRoomType(roomTypeReq));
+        return Math.min(configured, getCapacityForRoomType(roomTypeReq, schedulingConfig));
     }
 
     return configured;
@@ -526,7 +527,7 @@ function generateAsyncOnlineTrack({
     groupFormatter = formatElnGroupCode,
     channel = resolveDeliveryChannel(course),
 }) {
-    const template = SECTIONING_TEMPLATES.ONLINE;
+    const template = resolveTemplateConfig('ONLINE', schedulingConfig);
     const onlineCap = resolveOnlineSectionCapacity(schedulingConfig);
     let onlineCourse = sliceCourseCredits(course, { theoryOnly: true });
 
@@ -567,10 +568,10 @@ function generateSplitOnlineOfflineSections({
     onlineCap,
     channel,
 }) {
-    const onlineTemplate = SECTIONING_TEMPLATES.ONLINE;
+    const onlineTemplate = resolveTemplateConfig('ONLINE', schedulingConfig);
     const physicalTemplateCode = resolvePhysicalTemplateForSplit(course);
-    const physicalTemplate = SECTIONING_TEMPLATES[physicalTemplateCode]
-        || SECTIONING_TEMPLATES.LAB_COUPLED;
+    const physicalTemplate = resolveTemplateConfig(physicalTemplateCode, schedulingConfig)
+        || resolveTemplateConfig('LAB_COUPLED', schedulingConfig);
     const physicalCourse = resolvePracticeCredits(course) > 0
         ? sliceCourseCredits(course, { practiceOnly: true })
         : course;
@@ -671,7 +672,10 @@ function generateHybridSections(commonArgs) {
     }
 
     if (resolvePracticeCredits(physicalCourse) <= 0 && hasManualOfflineSchedule(course)) {
-        const practiceRoom = resolvePracticeRoomTypeReq(course, SECTIONING_TEMPLATES.LAB_COUPLED);
+        const practiceRoom = resolvePracticeRoomTypeReq(
+            course,
+            resolveTemplateConfig('LAB_COUPLED', commonArgs.schedulingConfig),
+        );
         const thCap = resolvePracticeSectionCapacity(
             commonArgs.schedulingConfig,
             practiceRoom,
@@ -750,7 +754,8 @@ function generateStandardSections({
     schedulingConfig,
 }) {
     const ltCap = resolveLtSectionCapacity(schedulingConfig);
-    const practiceRoom = resolvePracticeRoomTypeReq(course, SECTIONING_TEMPLATES.STANDARD);
+    const standardTemplate = resolveTemplateConfig('STANDARD', schedulingConfig);
+    const practiceRoom = resolvePracticeRoomTypeReq(course, standardTemplate);
     const thCap = resolvePracticeSectionCapacity(schedulingConfig, practiceRoom);
     const practiceSlotsPerTheoryGroup = Math.max(
         1,
@@ -769,7 +774,7 @@ function generateStandardSections({
                 (index) => formatTheoryGroupCode(index),
             ),
             classType: 'LT',
-            roomTypeReq: resolveTheoryRoomTypeReq(course, SECTIONING_TEMPLATES.STANDARD),
+            roomTypeReq: resolveTheoryRoomTypeReq(course, standardTemplate),
             shiftDuration: schedulingConfig.shift_duration,
             schedulingConfig,
         }));
@@ -787,7 +792,7 @@ function generateStandardSections({
                 buildPracticeAllocationOptions(schedulingConfig),
             ),
             classType: 'TH',
-            roomTypeReq: resolvePracticeRoomTypeReq(course, SECTIONING_TEMPLATES.STANDARD),
+            roomTypeReq: resolvePracticeRoomTypeReq(course, standardTemplate),
             shiftDuration: schedulingConfig.shift_duration,
             schedulingConfig,
         }));
@@ -804,7 +809,7 @@ function generateLabCoupledSections({
     studentGroups,
     schedulingConfig,
 }) {
-    const template = SECTIONING_TEMPLATES.LAB_COUPLED;
+    const template = resolveTemplateConfig('LAB_COUPLED', schedulingConfig);
     const defaultRoom = resolvePracticeRoomTypeReq(course, template);
     const syncCap = resolvePracticeSectionCapacity(schedulingConfig, defaultRoom);
     const slots = allocateSections(
@@ -839,7 +844,7 @@ function generateMedicalClinicSections({
     studentGroups,
     schedulingConfig,
 }) {
-    const template = SECTIONING_TEMPLATES.MEDICAL_CLINIC;
+    const template = resolveTemplateConfig('MEDICAL_CLINIC', schedulingConfig);
     const sections = [];
 
     if (resolveTheoryCredits(course) > 0) {
@@ -896,7 +901,7 @@ function buildSectionsForCourse({
     }
 
     const channel = resolveDeliveryChannel(course);
-    const profile = resolveCourseSectioningProfile(course);
+    const profile = resolveCourseSectioningProfile(course, schedulingConfig);
     const commonArgs = {
         course,
         semesterId,
@@ -1026,11 +1031,36 @@ async function autoGenerateCourseSections(prisma, options = {}) {
         throw error;
     }
 
-    const scheduleSuffix = parseSemesterScheduleSuffix(semester);
+    let selectedWave = null;
+    if (options.wave_id || options.wave_order) {
+        selectedWave = await prisma.semesterWave.findFirst({
+            where: {
+                semester_id,
+                OR: [
+                    options.wave_id ? { wave_id: String(options.wave_id) } : undefined,
+                    options.wave_order ? { wave_order: Number(options.wave_order) } : undefined,
+                ].filter(Boolean),
+            },
+        });
+    }
+
+    if (!selectedWave && cohortIds.length > 0) {
+        const waves = await prisma.semesterWave.findMany({
+            where: { semester_id },
+            orderBy: { wave_order: 'asc' },
+        });
+        selectedWave = waves.find((wave) => {
+            const waveCohorts = Array.isArray(wave.cohort_ids) ? wave.cohort_ids : [];
+            return waveCohorts.length
+                && cohortIds.every((cohortId) => waveCohorts.includes(cohortId));
+        }) || null;
+    }
+
+    const scheduleSuffix = parseSemesterScheduleSuffix(semester, selectedWave);
     if (!scheduleSuffix) {
         const error = new Error(
             `Không suy ra được mã lịch (đợt-hk-năm) từ học kỳ ${semester_id}. `
-            + 'Vui lòng đặt mã học kỳ dạng 2025_2026_3_1 (năm_năm_họcKỳ_đợt) và nhập năm học.',
+            + 'Vui lòng đặt mã học kỳ dạng 2025_2026_3 (năm_năm_họcKỳ) và cấu hình đợt nếu có.',
         );
         error.statusCode = 400;
         throw error;
@@ -1125,7 +1155,7 @@ async function autoGenerateCourseSections(prisma, options = {}) {
         for (const roadmap of plan.roadmaps) {
             const course = roadmap.course;
 
-            if (skipsAutoGenerateForTemplate(course.template_code)
+            if (skipsAutoGenerateForTemplate(course.template_code, sectioningConfig)
                 || skipsAutoGenerateForChannel(resolveDeliveryChannel(course))) {
                 skippedCourseCount += 1;
                 continue;

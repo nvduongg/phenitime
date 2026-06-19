@@ -337,7 +337,7 @@ function Dashboard() {
             type="info"
             showIcon
             className="dashboard-alert"
-            message="Dashboard đang dùng bố cục mẫu. Chạy Xếp lịch AI để hiển thị kết quả 96%+ như lần chạy gần đây."
+            message="Dashboard chưa có dữ liệu xếp lịch thật. Chạy Xếp lịch AI để cập nhật KPI và biểu đồ."
             action={<Link to="/ai-scheduler">Chạy ngay</Link>}
           />
         ) : null}

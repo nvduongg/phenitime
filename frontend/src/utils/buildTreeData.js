@@ -53,7 +53,8 @@ export function buildTreeData(flatData, options = {}) {
     nodes.map((node) => {
       const children = node[childrenKey]
       if (!children?.length) {
-        const { [childrenKey]: _removed, ...leaf } = node
+        const leaf = { ...node }
+        delete leaf[childrenKey]
         return leaf
       }
       return { ...node, [childrenKey]: pruneEmptyChildren(children) }

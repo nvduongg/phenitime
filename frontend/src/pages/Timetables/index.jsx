@@ -57,6 +57,7 @@ import {
   getCohorts,
   getCourseSections,
   getRooms,
+  getSchedulingSettings,
   getSemesterWaves,
   getTimetables,
   updateTimetable,
@@ -108,6 +109,7 @@ function Timetables() {
   const [dropValidation, setDropValidation] = useState({ errors: [], warnings: [] })
   const [dropRoomOptions, setDropRoomOptions] = useState([])
   const [pinnedGridEvents, setPinnedGridEvents] = useState([])
+  const [schedulingSettings, setSchedulingSettings] = useState({})
   const [form] = Form.useForm()
 
   const effectiveSemesterFilter =
@@ -185,6 +187,16 @@ function Timetables() {
   useEffect(() => {
     setCohortFilterState(loadCohortFilter())
   }, [location.pathname])
+
+  useEffect(() => {
+    getSchedulingSettings()
+      .then((result) => {
+        setSchedulingSettings(result.data || result || {})
+      })
+      .catch(() => {
+        setSchedulingSettings({})
+      })
+  }, [])
 
   useEffect(() => {
     if (!effectiveSemesterFilter) {
@@ -571,6 +583,7 @@ function Timetables() {
       startPeriod: dropTarget.startPeriod,
       semester: activeSemester,
       waves: semesterWaves,
+      defaultTeachingWeeks: schedulingSettings.max_teaching_weeks,
     })
 
     if (!payload.start_date || !payload.end_date) {
@@ -723,6 +736,7 @@ function Timetables() {
     sectionLookup,
     sections,
     semesterLookup,
+    semesterWaves,
     selectedWave,
     resolveUnscheduledForExport,
   ])
@@ -1209,7 +1223,7 @@ function Timetables() {
             name="period_count"
             label="Số tiết"
             rules={[{ required: true, message: 'Vui lòng nhập số tiết' }]}
-            initialValue={3}
+            initialValue={Number(schedulingSettings.shift_duration) || 3}
           >
             <InputNumber min={1} max={6} style={{ width: '100%' }} />
           </Form.Item>

@@ -17,19 +17,7 @@ exports.getSchedulingSettings = async (_req, res) => {
 
 exports.updateSchedulingSettings = async (req, res) => {
     try {
-        const {
-            shift_duration,
-            allowed_start_periods,
-            allowed_days,
-            evening_start_periods,
-        } = req.body;
-
-        const config = await updateSchedulingConfig(prisma, {
-            shift_duration,
-            allowed_start_periods,
-            allowed_days,
-            evening_start_periods,
-        });
+        const config = await updateSchedulingConfig(prisma, req.body || {});
 
         res.status(200).json({
             status: 'success',

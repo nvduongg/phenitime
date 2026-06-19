@@ -1,4 +1,5 @@
 import os
+import sys
 from data.data_loader import DataLoader
 from algorithms.event_generator import EventGenerator
 from algorithms.scheduler import TimetableScheduler # Khai báo class mới
@@ -10,7 +11,11 @@ def main():
     
     loader = DataLoader()
     generator = EventGenerator()
-    semester_id = "2025_2026_HK3_D1"
+    semester_id = sys.argv[1] if len(sys.argv) > 1 else os.getenv("SEMESTER_ID")
+    if not semester_id:
+        print("⚠ Thiếu SEMESTER_ID. Chạy: python main.py <semester_id> hoặc đặt biến môi trường SEMESTER_ID.")
+        loader.close()
+        return
     
     # 1. Tải dữ liệu
     df_sections = loader.get_course_sections(semester_id)

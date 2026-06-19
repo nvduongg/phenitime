@@ -7,8 +7,7 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "seed": "node prisma/seed.js",
-    "generate:templates": "node scripts/generateImportTemplates.js",
-    "extract:rooms": "node scripts/extractRoomsFromData.js"
+    "generate:templates": "node scripts/generateImportTemplates.js"
   },
   "keywords": [],
   "author": "",

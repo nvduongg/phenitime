@@ -1,5 +1,6 @@
 import { resolveWaveStartWeek } from './semesterWaves'
 import { resolvePhaseDateRange } from './scheduleRhythm'
+import { TIMETABLE_SHIFTS } from './timetableGrid'
 
 const THEORY_ROOMS = new Set(['LT', 'STD', 'STANDARD', ''])
 const COMPUTER_LAB_ROOMS = new Set(['PC', 'PM', 'LAB'])

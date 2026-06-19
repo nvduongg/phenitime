@@ -63,8 +63,13 @@ function getCourseDefaultRoomType(course) {
     );
 }
 
-function getCapacityForRoomType(roomType) {
-    return ROOM_TYPE_CAPACITY[normalizeRoomType(roomType)] || 30;
+function getCapacityForRoomType(roomType, config = {}) {
+    const normalized = normalizeRoomType(roomType);
+    const configured = Number(config?.room_type_capacities?.[normalized]);
+    if (Number.isFinite(configured) && configured > 0) {
+        return configured;
+    }
+    return ROOM_TYPE_CAPACITY[normalized] || 30;
 }
 
 function isCombinedRoomType(roomType) {

@@ -38,6 +38,7 @@ import {
   deleteCourseSection,
   getCohorts,
   getCourseSections,
+  getSchedulingSettings,
   getSemesterWaves,
 } from '../../services/api'
 import { formatCohortLabel } from '../../utils/formatters'
@@ -61,6 +62,24 @@ function loadSectionCaps() {
   } catch {
     return { ...DEFAULT_SECTION_CAPS }
   }
+}
+
+function pickSectionCaps(config = {}) {
+  return {
+    default_lt_capacity: config.default_lt_capacity,
+    default_th_capacity: config.default_th_capacity,
+    default_eln_capacity: config.default_eln_capacity,
+    default_cour_capacity: config.default_cour_capacity,
+  }
+}
+
+function normalizeSectionCaps(config = {}, fallback = DEFAULT_SECTION_CAPS) {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_SECTION_CAPS).map(([key, defaultValue]) => {
+      const parsed = Number(config[key])
+      return [key, Number.isFinite(parsed) && parsed > 0 ? parsed : fallback[key] ?? defaultValue]
+    }),
+  )
 }
 
 function saveSectionCaps(caps) {
@@ -288,13 +307,22 @@ function CourseSections() {
     setImportOpen(true)
   }
 
-  const handleOpenAutoGenerate = () => {
+  const handleOpenAutoGenerate = async () => {
     if (!effectiveSemesterFilter) {
       message.warning('Vui lòng chọn học kỳ trước khi sinh lớp tự động')
       return
     }
-    setSectionCaps(loadSectionCaps())
+    const savedCaps = loadSectionCaps()
+    setSectionCaps(savedCaps)
     setAutoGenOpen(true)
+
+    try {
+      const result = await getSchedulingSettings()
+      const settingsCaps = normalizeSectionCaps(pickSectionCaps(result.data || result), savedCaps)
+      setSectionCaps(settingsCaps)
+    } catch {
+      // Axios interceptor already shows the error; keep local caps as a fallback.
+    }
   }
 
   const handleAutoGenerate = async () => {

@@ -45,7 +45,7 @@ export default function Login() {
               { type: 'email', message: 'Email không hợp lệ' },
             ]}
           >
-            <Input placeholder="admin@phenikaa.edu.vn" autoComplete="username" />
+            <Input placeholder="admin@phenikaa-uni.edu.vn" autoComplete="username" />
           </Form.Item>
           <Form.Item
             name="password"

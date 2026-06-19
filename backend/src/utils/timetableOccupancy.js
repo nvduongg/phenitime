@@ -61,7 +61,7 @@ function applyWaveWeekOffset(events = [], startWeek = 1) {
 }
 
 function buildWaveId(semesterId, waveOrder) {
-    return `${String(semesterId).trim()}__W${Number(waveOrder)}`;
+    return `${String(semesterId).trim()}_${Number(waveOrder)}`;
 }
 
 module.exports = {

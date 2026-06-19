@@ -18,29 +18,21 @@ export const LEARNING_MODE_CHART_COLORS = {
 const VIRTUAL_ROOM_PATTERN = /^(ONLINE|MsTeam|ELN|MSTEAM)/i
 
 export const DUMMY_SCHEDULING_KPIS = {
-  total: 419,
-  strict: 360,
-  relaxed: 38,
-  unscheduled: 21,
+  total: 0,
+  strict: 0,
+  relaxed: 0,
+  unscheduled: 0,
 }
 
-export const DUMMY_SUCCESS_RATE = [
-  { name: 'Xếp chuẩn', value: DUMMY_SCHEDULING_KPIS.strict, color: SCHEDULING_STATUS_COLORS.strict },
-  { name: 'Linh động', value: DUMMY_SCHEDULING_KPIS.relaxed, color: SCHEDULING_STATUS_COLORS.relaxed },
-  { name: 'Chưa xếp', value: DUMMY_SCHEDULING_KPIS.unscheduled, color: SCHEDULING_STATUS_COLORS.unscheduled },
-]
+export const DUMMY_SUCCESS_RATE = []
 
-export const DUMMY_LEARNING_MODES = [
-  { name: 'Lý thuyết (LT)', key: 'LT', count: 245, fill: LEARNING_MODE_CHART_COLORS.LT },
-  { name: 'Thực hành (TH)', key: 'TH', count: 128, fill: LEARNING_MODE_CHART_COLORS.TH },
-  { name: 'Trực tuyến', key: 'ONLINE', count: 46, fill: LEARNING_MODE_CHART_COLORS.ONLINE },
-]
+export const DUMMY_LEARNING_MODES = []
 
-export const DUMMY_ROOM_OCCUPANCY = TIMETABLE_DAYS.map((day, index) => ({
+export const DUMMY_ROOM_OCCUPANCY = TIMETABLE_DAYS.map((day) => ({
   day,
   label: DAY_LABELS[day],
-  utilizedRooms: 28 + (index % 4) * 6,
-  bookings: 42 + index * 8,
+  utilizedRooms: 0,
+  bookings: 0,
 }))
 
 function isVirtualRoom(roomId, roomType) {

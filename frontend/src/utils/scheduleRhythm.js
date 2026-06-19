@@ -122,10 +122,15 @@ export function buildSchedulingEventsForSection(section, options = {}) {
 }
 
 export function resolvePhaseDateRange(semester, weekFrom, weekTo) {
-  const fallbackStart = new Date('2026-04-06')
-  const fallbackEnd = new Date('2026-06-14')
-  const semesterStart = semester?.start_date ? new Date(semester.start_date) : fallbackStart
-  const semesterEnd = semester?.end_date ? new Date(semester.end_date) : fallbackEnd
+  if (!semester?.start_date || !semester?.end_date) {
+    return { start_date: null, end_date: null }
+  }
+
+  const semesterStart = new Date(semester.start_date)
+  const semesterEnd = new Date(semester.end_date)
+  if (Number.isNaN(semesterStart.getTime()) || Number.isNaN(semesterEnd.getTime())) {
+    return { start_date: null, end_date: null }
+  }
   const from = Math.max(1, Number(weekFrom) || 1)
   const to = Math.max(from, Number(weekTo) || from)
 

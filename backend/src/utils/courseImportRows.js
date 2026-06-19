@@ -135,35 +135,10 @@ function pickImportNumber(row, columnIndex, pickRowValue, headerKeys, fallback =
     return fallback;
 }
 
-function parseCourseImportMatrixFromPath(filePath) {
-    const workbook = xlsx.readFile(filePath);
-    const sheetName = workbook.SheetNames[0];
-    const matrix = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: null });
-    const headerRowIndex = findCourseHeaderRowIndex(matrix);
-    if (headerRowIndex < 0) return [];
-
-    return matrix
-        .slice(headerRowIndex + 1)
-        .filter((cells) => Array.isArray(cells) && isValidImportCell(cells[0]))
-        .map((cells) => ({
-            course_id: String(cells[COURSE_IMPORT_COLUMN.course_id] || '').trim().toUpperCase(),
-            course_name: String(cells[COURSE_IMPORT_COLUMN.course_name] || '').trim(),
-            credits: Number(cells[COURSE_IMPORT_COLUMN.credits]) || 0,
-            theory_credits: Number(cells[COURSE_IMPORT_COLUMN.theory_credits]) || 0,
-            practice_credits: Number(cells[COURSE_IMPORT_COLUMN.practice_credits]) || 0,
-            class_type: String(cells[COURSE_IMPORT_COLUMN.class_type] || '').trim(),
-            room_type: String(cells[COURSE_IMPORT_COLUMN.room_type] || '').trim(),
-            template_code: String(cells[COURSE_IMPORT_COLUMN.template_code] || '').trim(),
-            unit_id: String(cells[COURSE_IMPORT_COLUMN.unit_id] || '').trim().toUpperCase(),
-        }))
-        .filter((row) => row.course_id && row.course_name);
-}
-
 module.exports = {
     COURSE_IMPORT_COLUMN,
     isValidImportCell,
     parseCourseImportRows,
-    parseCourseImportMatrixFromPath,
     pickImportCell,
     pickImportNumber,
     repairGarbledClassTypeCode,

@@ -1449,6 +1449,12 @@ body {
   grid-column: 1 / -1;
 }
 
+.settings-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 @media (max-width: 900px) {
   .settings-form-grid {
     grid-template-columns: 1fr;

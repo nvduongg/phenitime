@@ -30,8 +30,6 @@ const workerRedisConnection = {
 
 const QUEUE_NAME = 'ai-scheduler';
 const JOB_NAME = 'run-ai-scheduler';
-const DEFAULT_START_DATE = new Date('2026-04-06');
-const DEFAULT_END_DATE = new Date('2026-05-10');
 /**
  * MILP ~400+ event có thể >10 phút. Axios mặc định 600s đã gây "timeout of 600000ms exceeded".
  * SOLVER_HTTP_TIMEOUT_MS=0 → không giới hạn (khuyến nghị local).
@@ -116,6 +114,10 @@ async function persistTimetables(semesterId, rows, eventMetaLookup = new Map(), 
         select: { start_date: true, end_date: true },
     });
 
+    if (!semester?.start_date || !semester?.end_date) {
+        throw new Error(`Học kỳ ${semesterId} chưa có ngày bắt đầu/kết thúc hợp lệ.`);
+    }
+
     return prisma.$transaction(async (tx) => {
         const deleted = await tx.timetable.deleteMany({
             where: cohortScoped
@@ -151,11 +153,9 @@ async function persistTimetables(semesterId, rows, eventMetaLookup = new Map(), 
                         start_period: row.start_period,
                         period_count: row.period_count,
                         start_date: phaseDates?.start_date
-                            || semester?.start_date
-                            || DEFAULT_START_DATE,
+                            || semester.start_date,
                         end_date: phaseDates?.end_date
-                            || semester?.end_date
-                            || DEFAULT_END_DATE,
+                            || semester.end_date,
                     };
                 }),
             });

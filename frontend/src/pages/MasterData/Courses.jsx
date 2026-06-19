@@ -18,6 +18,7 @@ import {
   createCourse,
   deleteCourse,
   getCourses,
+  getSchedulingSettings,
   getOrganizationUnits,
   updateCourse,
 } from '../../services/api'
@@ -26,12 +27,15 @@ import {
   formatRoomType,
   getRoomTypeColor,
 } from '../../utils/formatters'
+import { DEFAULT_TEACHING_WEEKS } from '../../utils/semesterDates'
 
 function Courses() {
   const [importOpen, setImportOpen] = useState(false)
   const [unitFilter, setUnitFilter] = useState(null)
   const [classTypeFilter, setClassTypeFilter] = useState(null)
   const [unitOptions, setUnitOptions] = useState([])
+  const [offlineDefaults, setOfflineDefaults] = useState({})
+  const [maxTeachingWeeks, setMaxTeachingWeeks] = useState(DEFAULT_TEACHING_WEEKS)
   const importTemplate = getImportTemplate('courses')
 
   const crud = useCrudPage({
@@ -61,6 +65,16 @@ function Courses() {
       .catch(() => {
         // Error handled by axios interceptor
       })
+  }, [])
+
+  useEffect(() => {
+    getSchedulingSettings()
+      .then((result) => {
+        setOfflineDefaults(result.data?.offline_schedule_defaults || {})
+        const weeks = Number(result.data?.max_teaching_weeks)
+        if (weeks > 0) setMaxTeachingWeeks(weeks)
+      })
+      .catch(() => {})
   }, [])
 
   const displayData = useMemo(() => {
@@ -293,7 +307,11 @@ function Courses() {
               </Form.Item>
             </div>
 
-            <CourseOfflineScheduleFields form={crud.form} />
+            <CourseOfflineScheduleFields
+              form={crud.form}
+              defaults={offlineDefaults}
+              maxWeeks={maxTeachingWeeks}
+            />
           </div>
         )}
       />
