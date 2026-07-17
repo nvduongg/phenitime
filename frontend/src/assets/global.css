@@ -4,18 +4,14 @@
   --app-sider-width: 260px;
   --app-sider-collapsed-width: 80px;
   --app-sider-current-width: 260px;
-  --app-user-width: 210px;
+  --app-user-width: 200px;
   --app-trigger-size: 28px;
   --app-trigger-gap: -1px;
   --brand-blue: #1677ff;
   --brand-violet: #722ed1;
   --brand-cyan: #13c2c2;
-  --sider-bg: #f4f7ff;
-  --sider-border: #e0e8f5;
-  /* Gradient palette */
-  --bg-from: #eef3ff;
-  --bg-mid: #f5f0ff;
-  --bg-to:  #f0faff;
+  --sider-bg: #f8fafc;
+  --sider-border: #e8eef5;
 }
 
 *,
@@ -34,8 +30,7 @@ body,
 
 body {
   font-family: 'Inter', sans-serif;
-  background: linear-gradient(105deg, var(--bg-from) 0%, var(--bg-mid) 48%, var(--bg-to) 100%);
-  background-attachment: fixed;
+  background: #ffffff;
   color: #1f2937;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -51,7 +46,7 @@ body {
 
 .app-layout {
   min-height: 100vh;
-  background: transparent;
+  background: #ffffff;
   position: relative;
 }
 
@@ -60,7 +55,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: transparent;
+  background: #ffffff;
   position: relative;
 }
 
@@ -97,10 +92,7 @@ body {
   position: relative;
   z-index: 100;
   height: var(--app-topbar-height);
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(200, 210, 240, 0.45);
+  background: #ffffff;
   flex-shrink: 0;
 }
 
@@ -114,7 +106,7 @@ body {
   align-items: center;
   padding: 0 var(--app-gutter-x);
   overflow: hidden;
-  background: linear-gradient(135deg, rgba(240,245,255,0.9) 0%, rgba(248,244,255,0.9) 100%);
+  background: var(--sider-bg);
   transition: width 0.2s ease, padding 0.2s ease;
 }
 
@@ -188,7 +180,7 @@ body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: transparent;
+  background: #ffffff;
 }
 
 .app-body.ant-layout {
@@ -203,7 +195,7 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   box-shadow: none;
-  background: linear-gradient(160deg, #f0f5ff 0%, #f8f4ff 60%, #eef8ff 100%) !important;
+  background: var(--sider-bg) !important;
   border: none !important;
   border-inline-end: none !important;
   padding: 12px 8px;
@@ -369,7 +361,7 @@ body {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: transparent;
+  background: #ffffff;
 }
 
 .app-workspace.ant-layout {
@@ -398,8 +390,8 @@ body {
 
 .app-header-user:hover,
 .app-header-user:focus-visible {
-  background: rgba(99, 102, 241, 0.07);
-  border-color: rgba(99, 102, 241, 0.2);
+  background: #f1f5f9;
+  border-color: #e2e8f0;
   outline: none;
 }
 
@@ -449,32 +441,25 @@ body {
 }
 
 .app-user-dropdown {
-  min-width: 280px;
-  max-width: 320px;
-  background: rgba(255, 255, 255, 0.97);
-  border-radius: 14px;
-  border: 1px solid rgba(200, 215, 245, 0.6);
+  min-width: 240px;
+  background: #fff;
+  border-radius: 8px;
   box-shadow:
-    0 8px 32px rgba(22, 80, 200, 0.12),
-    0 2px 8px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
 }
 
 .app-user-dropdown-head {
   display: flex;
-  gap: 14px;
-  padding: 18px 16px 14px;
-  background: linear-gradient(135deg, #eef3ff 0%, #f5eeff 60%, #eaf7ff 100%);
-  border-bottom: 1px solid rgba(200, 215, 245, 0.5);
-  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid #f1f5f9;
 }
 
 .app-user-dropdown-avatar {
   flex-shrink: 0;
   background: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-violet) 100%) !important;
-  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.3);
 }
 
 .app-user-dropdown-meta {
@@ -482,57 +467,23 @@ body {
   flex-direction: column;
   min-width: 0;
   flex: 1;
-  gap: 3px;
+  gap: 2px;
 }
 
 .app-user-dropdown-name {
-  font-size: 15px;
-  font-weight: 700;
-  color: #0f172a;
-  max-width: 190px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 14px;
+  max-width: 168px;
 }
 
-.app-user-dropdown-email {
-  font-size: 12px;
-  color: #64748b;
-  max-width: 190px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
+.app-user-dropdown-email,
 .app-user-dropdown-role {
-  display: inline-block;
-  margin-top: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  color: #1677ff;
-  background: rgba(22, 119, 255, 0.1);
-  border-radius: 20px;
-  padding: 2px 10px;
-  max-width: fit-content;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 12px;
+  max-width: 168px;
 }
 
 .app-user-dropdown .ant-dropdown-menu {
   box-shadow: none;
-  padding: 6px;
-  background: transparent;
-}
-
-.app-user-dropdown .ant-dropdown-menu-item {
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 14px;
-}
-
-.app-user-dropdown .ant-dropdown-menu-item:hover {
-  background: #f1f5f9;
+  padding: 4px;
 }
 
 .page-lead {
