@@ -249,21 +249,37 @@ function buildOfflineSchedulePlan(course = {}, shiftDuration = 3, maxWeeks = 10,
     const lastWeek = weeks[weeks.length - 1];
     const durationWeeks = lastWeek - firstWeek + 1;
 
-    const events = weeks.map((week, index) => ({
-        event_part: index + 1,
-        duration: periodsPerSession,
-        weekly_periods: periodsPerSession,
-        week_from: week,
-        week_to: week,
-        rhythm_mode: OFFLINE_RHYTHM_MODE,
-    }));
+    const freq = new Map();
+    weeks.forEach(w => freq.set(w, (freq.get(w) || 0) + 1));
+    const maxConcurrent = Math.max(...freq.values());
+
+    const events = [];
+    for (let part = 1; part <= maxConcurrent; part++) {
+        const weeksWithThisPart = [];
+        for (let w = firstWeek; w <= lastWeek; w++) {
+            if ((freq.get(w) || 0) >= part) {
+                weeksWithThisPart.push(w);
+            }
+        }
+        
+        if (weeksWithThisPart.length > 0) {
+            events.push({
+                event_part: part,
+                duration: periodsPerSession,
+                weekly_periods: periodsPerSession,
+                week_from: Math.min(...weeksWithThisPart),
+                week_to: Math.max(...weeksWithThisPart),
+                rhythm_mode: OFFLINE_RHYTHM_MODE,
+            });
+        }
+    }
 
     return {
         params: {
             totalPeriods,
             stPerWeek: periodsPerSession,
             actualWeeks: durationWeeks,
-            numShifts: 1,
+            numShifts: maxConcurrent,
         },
         events,
         weeks,

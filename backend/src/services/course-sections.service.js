@@ -10,6 +10,7 @@ const {
 const {
     requiresSchedulingForCourse,
     resolveOnlineClassType,
+    resolvePracticeClassType,
 } = require('../utils/constants');
 const {
     DELIVERY_CHANNELS,
@@ -218,19 +219,11 @@ function resolvePlanningEnrollmentCapacity(slot, requiresScheduling) {
     const targetCap = Number(slot?.capacity) || 0;
     const allocated = Number(slot?.allocatedHeadcount);
 
-    if (!requiresScheduling) {
-        if (Number.isFinite(allocated) && allocated > 0) {
-            return allocated;
-        }
-        return targetCap;
+    if (targetCap > 0) {
+        return Math.max(targetCap, allocated || 0);
     }
 
-    /** Lớp lẻ / lớp gộp đuôi: hiển thị sĩ số thực; lớp đủ trần hiển thị trần — khớp TKB thực (40×N + lớp cuối lẻ). */
-    if (Number.isFinite(allocated) && allocated > 0 && allocated !== targetCap) {
-        return allocated;
-    }
-
-    return targetCap;
+    return allocated || 0;
 }
 
 function buildSectionDraft({
@@ -622,7 +615,7 @@ function generateSplitOnlineOfflineSections({
             semesterId,
             scheduleSuffix,
             allocatedSlots: practiceSlots,
-            classType: 'TH',
+            classType: resolvePracticeClassType(practiceRoom),
             roomTypeReq: practiceRoom,
             shiftDuration: schedulingConfig.shift_duration,
             schedulingConfig,
@@ -690,7 +683,7 @@ function generateHybridSections(commonArgs) {
                 (index) => formatTheoryGroupCode(index),
                 buildPracticeAllocationOptions(commonArgs.schedulingConfig),
             ),
-            classType: 'TH',
+            classType: resolvePracticeClassType(practiceRoom),
             roomTypeReq: practiceRoom,
             shiftDuration: commonArgs.schedulingConfig.shift_duration,
             schedulingConfig: commonArgs.schedulingConfig,
@@ -791,7 +784,7 @@ function generateStandardSections({
                 (index) => formatPracticeGroupCode(index, practiceSlotsPerTheoryGroup),
                 buildPracticeAllocationOptions(schedulingConfig),
             ),
-            classType: 'TH',
+            classType: resolvePracticeClassType(resolvePracticeRoomTypeReq(course, standardTemplate)),
             roomTypeReq: resolvePracticeRoomTypeReq(course, standardTemplate),
             shiftDuration: schedulingConfig.shift_duration,
             schedulingConfig,
@@ -874,7 +867,7 @@ function generateMedicalClinicSections({
                 template.cap,
                 (index) => formatCoupledPracticeGroupCode(formatTheoryGroupCode(index)),
             ),
-            classType: 'TH',
+            classType: resolvePracticeClassType(template.room),
             roomTypeReq: template.room,
             shiftDuration: schedulingConfig.shift_duration,
             schedulingConfig,
@@ -1166,7 +1159,8 @@ async function autoGenerateCourseSections(prisma, options = {}) {
             const course = roadmap.course;
 
             if (skipsAutoGenerateForTemplate(course.template_code, sectioningConfig)
-                || skipsAutoGenerateForChannel(resolveDeliveryChannel(course))) {
+                || skipsAutoGenerateForChannel(resolveDeliveryChannel(course))
+                || roadmap.course_type === 'ELECTIVE') {
                 skippedCourseCount += 1;
                 continue;
             }

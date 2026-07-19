@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { PieChartOutlined, RobotOutlined, SendOutlined } from '@ant-design/icons'
-import { Alert, Button, Empty, Input, Modal, Select, Spin, Table, Tag, Typography, message } from 'antd'
+import { PieChartOutlined, RobotOutlined, SendOutlined, TeamOutlined, CheckCircleOutlined, ClockCircleOutlined, FireOutlined } from '@ant-design/icons'
+import { Alert, Button, Col, Empty, Input, Modal, Row, Select, Spin, Statistic, Table, Tag, Typography, message } from 'antd'
 
 const { Text } = Typography
 import {
@@ -44,6 +44,20 @@ import { formatCohortLabel } from '../../utils/formatters'
 const ASSIGNMENT_STATUS_COLORS = {
   assigned: '#52c41a',
   unassigned: '#faad14',
+}
+
+function kpiCardStyle(bg, border) {
+  return {
+    background: bg,
+    border: `1px solid ${border}22`,
+    borderRadius: 10,
+    padding: '12px 16px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 2,
+    height: '100%',
+  }
 }
 
 function getSectionTeachingWeight(section) {
@@ -192,6 +206,7 @@ function LecturerAssignment() {
       },
     ].filter((item) => item.value > 0)
 
+    // Build per-lecturer load map
     const lecturerLoadMap = new Map()
     for (const section of filteredSections) {
       if (!section.lecturer_id) continue
@@ -213,14 +228,30 @@ function LecturerAssignment() {
       lecturerLoadMap.set(section.lecturer_id, current)
     }
 
-    const lecturerLoadChartData = [...lecturerLoadMap.values()]
+    const allLecturerLoads = [...lecturerLoadMap.values()]
       .sort((a, b) => b.sections - a.sections || b.credits - a.credits)
+
+    // Top 10 for chart — reversed so highest is at top of horizontal chart
+    const lecturerLoadChartData = allLecturerLoads
       .slice(0, 10)
+      .reverse()
       .map((item) => ({
-        name: item.name,
+        name: item.name.length > 20 ? item.name.slice(0, 18) + '…' : item.name,
+        fullName: item.name,
         sections: item.sections,
         credits: item.credits,
       }))
+
+    // GV stats
+    const assignedLecturerCount = lecturerLoadMap.size
+    const totalLecturers = lecturers.length
+    const unassignedLecturerCount = totalLecturers - assignedLecturerCount
+    const avgSectionsPerLecturer = assignedLecturerCount
+      ? (assignedSections / assignedLecturerCount).toFixed(1)
+      : 0
+    const avgCreditsPerLecturer = assignedLecturerCount
+      ? (assignedCredits / assignedLecturerCount).toFixed(1)
+      : 0
 
     return {
       totalSections,
@@ -231,6 +262,11 @@ function LecturerAssignment() {
       assignedCredits,
       statusChartData,
       lecturerLoadChartData,
+      assignedLecturerCount,
+      totalLecturers,
+      unassignedLecturerCount,
+      avgSectionsPerLecturer,
+      avgCreditsPerLecturer,
     }
   }, [filteredSections, lecturers])
 
@@ -507,14 +543,63 @@ function LecturerAssignment() {
           open={statsModalOpen}
           onCancel={() => setStatsModalOpen(false)}
           footer={null}
-          width={1000}
+          width={1100}
           centered
         >
+          {/* ── KPI summary row ── */}
+          <Row gutter={[12, 12]} style={{ marginBottom: 20 }}>
+            <Col span={6}>
+              <div style={kpiCardStyle('#e6f4ff', '#1677ff')}>
+                <TeamOutlined style={{ fontSize: 20, color: '#1677ff', marginBottom: 4 }} />
+                <Statistic
+                  title={<span style={{ fontSize: 12, color: '#475569' }}>Tổng giảng viên</span>}
+                  value={assignmentStats.totalLecturers}
+                  suffix="GV"
+                  valueStyle={{ fontSize: 22, fontWeight: 700, color: '#1677ff' }}
+                />
+              </div>
+            </Col>
+            <Col span={6}>
+              <div style={kpiCardStyle('#f6ffed', '#52c41a')}>
+                <CheckCircleOutlined style={{ fontSize: 20, color: '#52c41a', marginBottom: 4 }} />
+                <Statistic
+                  title={<span style={{ fontSize: 12, color: '#475569' }}>Đã có lịch dạy</span>}
+                  value={assignmentStats.assignedLecturerCount}
+                  suffix={`/ ${assignmentStats.totalLecturers} GV`}
+                  valueStyle={{ fontSize: 22, fontWeight: 700, color: '#52c41a' }}
+                />
+              </div>
+            </Col>
+            <Col span={6}>
+              <div style={kpiCardStyle('#fff7e6', '#fa8c16')}>
+                <ClockCircleOutlined style={{ fontSize: 20, color: '#fa8c16', marginBottom: 4 }} />
+                <Statistic
+                  title={<span style={{ fontSize: 12, color: '#475569' }}>Chưa có lớp nào</span>}
+                  value={assignmentStats.unassignedLecturerCount}
+                  suffix="GV"
+                  valueStyle={{ fontSize: 22, fontWeight: 700, color: '#fa8c16' }}
+                />
+              </div>
+            </Col>
+            <Col span={6}>
+              <div style={kpiCardStyle('#f9f0ff', '#722ed1')}>
+                <FireOutlined style={{ fontSize: 20, color: '#722ed1', marginBottom: 4 }} />
+                <Statistic
+                  title={<span style={{ fontSize: 12, color: '#475569' }}>Tải TB / GV</span>}
+                  value={assignmentStats.avgSectionsPerLecturer}
+                  suffix={`lớp · ${assignmentStats.avgCreditsPerLecturer} TC`}
+                  valueStyle={{ fontSize: 22, fontWeight: 700, color: '#722ed1' }}
+                />
+              </div>
+            </Col>
+          </Row>
+
           <div className="chart-grid chart-grid--assignment">
+            {/* ── Donut: trạng thái lớp HP ── */}
             <div className="chart-panel">
-              <div className="chart-panel-title">Tình trạng phân công giảng viên</div>
+              <div className="chart-panel-title">Tình trạng phân công lớp học phần</div>
               {assignmentStats.statusChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={360}>
+                <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
                       data={assignmentStats.statusChartData}
@@ -522,19 +607,20 @@ function LecturerAssignment() {
                       nameKey="name"
                       cx="50%"
                       cy="50%"
-                      innerRadius={58}
-                      outerRadius={96}
+                      innerRadius={62}
+                      outerRadius={100}
                       paddingAngle={3}
                       label={({ name, value, percent }) =>
-                        `${name}: ${value} (${(percent * 100).toFixed(0)}%)`
+                        `${value} (${(percent * 100).toFixed(0)}%)`
                       }
+                      labelLine={false}
                     >
                       {assignmentStats.statusChartData.map((entry) => (
                         <Cell key={entry.name} fill={entry.color} />
                       ))}
                     </Pie>
                     <Tooltip formatter={(value, name) => [`${value} lớp`, name]} />
-                    <Legend />
+                    <Legend iconType="circle" />
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
@@ -549,44 +635,60 @@ function LecturerAssignment() {
               )}
             </div>
 
+            {/* ── Horizontal bar: top 10 tải giảng ── */}
             <div className="chart-panel">
-              <div className="chart-panel-title">Khối lượng giảng dạy theo giảng viên (top 10)</div>
+              <div className="chart-panel-title">Tải giảng top 10 (số lớp & tín chỉ)</div>
               {assignmentStats.lecturerLoadChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={360}>
+                <ResponsiveContainer width="100%" height={300}>
                   <BarChart
                     data={assignmentStats.lecturerLoadChartData}
-                    margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                    layout="vertical"
+                    margin={{ top: 4, right: 48, left: 8, bottom: 4 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
                     <XAxis
+                      type="number"
+                      allowDecimals={false}
+                      tick={{ fontSize: 11 }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      type="category"
                       dataKey="name"
                       tick={{ fontSize: 11 }}
-                      interval={0}
-                      angle={-18}
-                      textAnchor="end"
-                      height={72}
+                      width={120}
+                      tickLine={false}
                     />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
                     <Tooltip
+                      cursor={{ fill: '#f1f5f9' }}
                       formatter={(value, name) => [
                         value,
-                        name === 'sections' ? 'Số lớp' : 'Tín chỉ',
+                        name === 'sections' ? 'Số lớp' : 'Tín chỉ giảng dạy',
                       ]}
+                      labelFormatter={(label, payload) =>
+                        payload?.[0]?.payload?.fullName || label
+                      }
                     />
                     <Legend
-                      formatter={(value) => (value === 'sections' ? 'Số lớp' : 'Tín chỉ giảng dạy')}
+                      formatter={(value) => (value === 'sections' ? 'Số lớp' : 'Tín chỉ')}
+                      iconType="circle"
+                      iconSize={8}
                     />
                     <Bar
                       dataKey="sections"
                       name="sections"
                       fill="#1677ff"
-                      radius={[4, 4, 0, 0]}
+                      radius={[0, 4, 4, 0]}
+                      barSize={10}
+                      label={{ position: 'right', fontSize: 10, fill: '#1677ff' }}
                     />
                     <Bar
                       dataKey="credits"
                       name="credits"
                       fill="#722ed1"
-                      radius={[4, 4, 0, 0]}
+                      radius={[0, 4, 4, 0]}
+                      barSize={10}
+                      label={{ position: 'right', fontSize: 10, fill: '#722ed1' }}
                     />
                   </BarChart>
                 </ResponsiveContainer>

@@ -46,21 +46,21 @@ class ExistingOccupancyInput(BaseModel):
 
 class AlgorithmConfig(BaseModel):
     shift_duration: int = 3
-    max_lecturer_shifts_per_day: int = Field(default=2, ge=1, le=5)
+    max_lecturer_shifts_per_day: int = Field(default=3, ge=1, le=6)
     allowed_start_periods: list[int] = Field(default_factory=list)
     regular_starts: list[int] = Field(default_factory=list)
     evening_starts: list[int] = Field(default_factory=lambda: [13])
     allowed_days: list[int] = Field(default_factory=lambda: list(range(2, 8)))
-    solver_max_time_seconds: float = Field(default=60.0, ge=10.0, le=600.0)
+    solver_max_time_seconds: float = Field(default=120.0, ge=10.0, le=600.0)
     solver_num_workers: int = Field(default=8, ge=1, le=32)
     enable_relaxation_pass: bool = True
-    relaxation_max_time_seconds: float = Field(default=60.0, ge=10.0, le=600.0)
-    soft_capacity_ratio: float = Field(default=0.9, ge=0.1, le=1.0)
-    relaxed_max_shifts_per_day: int = Field(default=3, ge=1, le=6)
+    relaxation_max_time_seconds: float = Field(default=90.0, ge=10.0, le=600.0)
+    soft_capacity_ratio: float = Field(default=0.85, ge=0.1, le=1.0)
+    relaxed_max_shifts_per_day: int = Field(default=4, ge=1, le=8)
     enable_lns_pass: bool = True
-    lns_max_iterations: int = Field(default=3, ge=1, le=10)
+    lns_max_iterations: int = Field(default=5, ge=1, le=15)
     lns_max_neighborhood: int = Field(default=40, ge=5, le=120)
-    lns_max_time_seconds: float = Field(default=90.0, ge=10.0, le=600.0)
+    lns_max_time_seconds: float = Field(default=120.0, ge=10.0, le=600.0)
     existing_occupancy: list[ExistingOccupancyInput] = Field(default_factory=list)
     fixed_room_per_section: bool = True
     virtual_room_capacity: int = Field(default=9999, ge=1)

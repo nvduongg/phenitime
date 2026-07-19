@@ -525,18 +525,6 @@ function AiScheduler() {
                 `Đã lưu ${createdCount} buổi học vào thời khóa biểu.`
               : 'Chuẩn bị dữ liệu học kỳ, chạy thuật toán và xem thời khóa biểu.'
           }
-          filters={
-            <Select
-              allowClear
-              mode="multiple"
-              placeholder="Lọc niên khóa"
-              style={{ minWidth: 240 }}
-              options={cohortOptions}
-              value={cohortFilter}
-              onChange={setCohortFilter}
-              maxTagCount="responsive"
-            />
-          }
           actions={
             successResult ? (
               <>

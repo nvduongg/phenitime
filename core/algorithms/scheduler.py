@@ -22,15 +22,15 @@ class TimetableScheduler:
     FALLBACK_EVENING_STARTS = [13]
     FALLBACK_ALLOWED_DAYS = list(range(2, 8))
     FALLBACK_SHIFT_DURATION = 3
-    MAX_SHIFTS_PER_DAY_LECTURER = 2
-    DEFAULT_SOLVER_MAX_TIME_SECONDS = 60.0
+    MAX_SHIFTS_PER_DAY_LECTURER = 3
+    DEFAULT_SOLVER_MAX_TIME_SECONDS = 120.0
     DEFAULT_SOLVER_NUM_WORKERS = 8
-    DEFAULT_RELAXATION_MAX_TIME_SECONDS = 60.0
-    DEFAULT_LNS_MAX_ITERATIONS = 3
+    DEFAULT_RELAXATION_MAX_TIME_SECONDS = 90.0
+    DEFAULT_LNS_MAX_ITERATIONS = 5
     DEFAULT_LNS_MAX_NEIGHBORHOOD = 40
-    DEFAULT_LNS_MAX_TIME_SECONDS = 90.0
-    SOFT_CAPACITY_RATIO = 0.9
-    RELAXED_MAX_SHIFTS_PER_DAY = 3
+    DEFAULT_LNS_MAX_TIME_SECONDS = 120.0
+    SOFT_CAPACITY_RATIO = 0.85
+    RELAXED_MAX_SHIFTS_PER_DAY = 4
     REWARD_SCHEDULED = 1000
     PENALTY_OVERCROWDED = 10
     PENALTY_FATIGUED = 20
@@ -44,7 +44,7 @@ class TimetableScheduler:
     THEORY_ROOM_TYPES = LEARNING_MODES["THEORY"]
 
     THEORY_GROUP = frozenset({"LT", "STD", "STANDARD", ""})
-    COMPUTER_LAB_GROUP = frozenset({"PC", "PM", "LAB"})
+    COMPUTER_LAB_GROUP = frozenset({"PC", "PM", "LAB", "TH"})
     MEDICAL_GROUP = frozenset({"MED", "BV", "VJ"})
 
     def __init__(self, df_events, df_rooms, config=None):
@@ -132,6 +132,7 @@ class TimetableScheduler:
         self.section_groups = {}
         self.lecturer_groups = {}
         self.student_group_map = {}
+        self._zero_slot_events = []  # events bị zero-slot ở Phase 1 → đưa sang Phase 2
 
         self._room_period_index = defaultdict(list)
         self._lecturer_period_index = defaultdict(list)
@@ -466,7 +467,6 @@ class TimetableScheduler:
         if len(self.events) > 0:
             print(f"[*] DEBUG Sample Event: {self.events.iloc[0].to_dict()}")
 
-        events_without_slots = []
         stats = {
             "capacity": 0,
             "room_type": 0,
@@ -500,6 +500,7 @@ class TimetableScheduler:
                     stats["virtual_filter"] += 1
                     continue
 
+                # Strict capacity + room type check để đảm bảo chất lượng
                 if not self._passes_capacity_and_room_type_pruning(event, room):
                     stats["room_type"] += 1
                     continue
@@ -532,17 +533,19 @@ class TimetableScheduler:
                         self._index_placement_var(event, room_id, day, shift, var)
 
             if event_var_count == 0:
-                events_without_slots.append(event_id)
+                # Không khóa cứng — thu thập để Phase 2 xử lý với soft constraint
+                self._zero_slot_events.append(event_id)
                 required = event.get("room_type_req")
                 if pd.isna(required) or required is None or str(required).strip() == "":
                     required = ", ".join(sorted(self._allowed_room_types_for_event(event)))
                 else:
                     required = str(required).upper()
                 print(
-                    f"WARNING: Event [{event_id}] has NO valid slots "
-                    f"(check capacity/type; required room type: {required}). "
-                    f"Will remain unscheduled."
+                    f"WARNING: Event [{event_id}] has NO valid slots in Phase 1 "
+                    f"(required room type: {required}, capacity: {self._safe_int(event.get('capacity'), 0)}). "
+                    f"Will retry in Phase 2 with relaxed constraints."
                 )
+                # Đặt is_sched_var = 0 tạm thời cho Phase 1 model — Phase 2 sẽ override
                 self.model.Add(is_sched_var == 0)
             else:
                 self.model.Add(sum(event_vars) == is_sched_var)
@@ -552,10 +555,10 @@ class TimetableScheduler:
 
         self.Unscheduled = self.is_scheduled
 
-        if events_without_slots:
+        if self._zero_slot_events:
             print(
-                f"[!] {len(events_without_slots)} event(s) have zero valid "
-                f"placement options after pruning."
+                f"[!] {len(self._zero_slot_events)} event(s) have zero Phase-1 slots "
+                f"— will be retried in Phase 2 with fully relaxed capacity constraints."
             )
 
         print(
@@ -1535,18 +1538,28 @@ class TimetableScheduler:
         phase1_scheduled = phase1_output["scheduled"]
         phase1_unscheduled = phase1_output["unscheduled"]
 
-        phase2_scheduled = []
-        final_unscheduled = phase1_unscheduled
+        # Merge zero-slot events (bị loại hoàn toàn ở Phase 1) vào Phase 2
+        zero_slot = self._zero_slot_events or []
+        phase2_seeds = list({*[str(e) for e in phase1_unscheduled], *[str(e) for e in zero_slot]})
 
-        if phase1_unscheduled and enable_relaxation:
+        if zero_slot:
             print(
-                f"[*] Triggering Phase 2 relaxation for {len(phase1_unscheduled)} "
-                f"leftover event(s)..."
+                f"[*] Adding {len(zero_slot)} zero-Phase1-slot event(s) to Phase 2 queue "
+                f"(total Phase 2 queue: {len(phase2_seeds)})."
             )
-            phase2_output = self.run_relaxation_pass(phase1_unscheduled, phase1_scheduled)
+
+        phase2_scheduled = []
+        final_unscheduled = phase2_seeds
+
+        if phase2_seeds and enable_relaxation:
+            print(
+                f"[*] Triggering Phase 2 relaxation for {len(phase2_seeds)} "
+                f"event(s) (including {len(zero_slot)} zero-slot)..."
+            )
+            phase2_output = self.run_relaxation_pass(phase2_seeds, phase1_scheduled)
             phase2_scheduled = phase2_output["scheduled"]
             final_unscheduled = phase2_output["unscheduled"]
-        elif phase1_unscheduled:
+        elif phase2_seeds:
             print("[*] Phase 2 relaxation pass disabled via config.")
 
         merged_results = phase1_scheduled + phase2_scheduled
@@ -1571,11 +1584,18 @@ class TimetableScheduler:
         strict_count = len(phase1_scheduled)
 
         print(
-            f"[*] Final merge: {strict_count} strict + {len(phase2_scheduled)} phase-2 relaxed "
+            f"[*] Final merge: {strict_count} strict + {relaxed_count} phase-2 relaxed "
+            f"(incl. {len(zero_slot)} zero-slot rescued) "
             f"+ {phase3_scheduled} phase-3 LNS = {len(merged_results)} total placement(s); "
             f"{len(final_unscheduled)} unscheduled "
             f"({phase3_relocated} placement(s) repositioned in LNS)."
         )
+
+        total_events = len(self.is_scheduled)
+        coverage_pct = (
+            round((len(merged_results) / total_events) * 100, 1) if total_events else 0
+        )
+        print(f"[*] Coverage: {len(merged_results)}/{total_events} events scheduled = {coverage_pct}%")
 
         return {
             "scheduled": pd.DataFrame(merged_results) if merged_results else pd.DataFrame(),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Form, Input, InputNumber, Select, Tag, Tooltip } from 'antd'
+import { Form, Input, InputNumber, Select, Tag, Tooltip, TreeSelect } from 'antd'
 import ExcelImportModal from '../../components/Common/ExcelImportModal'
 import ImportToolbarActions from '../../components/Common/ImportToolbarActions'
 import MasterDataCrudPage from '../../components/Common/MasterDataCrudPage'
@@ -238,15 +238,18 @@ function Lecturers() {
             label="Chuyên môn giảng dạy"
             tooltip="Chọn các học phần giảng viên có thể dạy — dùng cho ma trận phân công"
           >
-            <Select
-              mode="multiple"
+            <TreeSelect
+              treeData={courseOptions.map(opt => ({ title: opt.label, value: opt.value }))}
+              treeCheckable={true}
+              showCheckedStrategy={TreeSelect.SHOW_CHILD}
               allowClear
               showSearch
-              optionFilterProp="label"
-              options={courseOptions}
+              treeNodeFilterProp="title"
               placeholder="Chọn học phần (có thể chọn nhiều)"
               maxTagCount="responsive"
-              listHeight={280}
+              listHeight={400}
+              popupMatchSelectWidth={false}
+              dropdownStyle={{ minWidth: 500, maxWidth: '90vw' }}
             />
           </Form.Item>
         </div>
