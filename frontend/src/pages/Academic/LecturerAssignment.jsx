@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { RobotOutlined, SendOutlined } from '@ant-design/icons'
+import { PieChartOutlined, RobotOutlined, SendOutlined } from '@ant-design/icons'
 import { Alert, Button, Empty, Input, Modal, Select, Spin, Table, Tag, Typography, message } from 'antd'
 
 const { Text } = Typography
@@ -72,6 +72,7 @@ function LecturerAssignment() {
   const [bulkRequestOpen, setBulkRequestOpen] = useState(false)
   const [bulkRequestMessage, setBulkRequestMessage] = useState('')
   const [bulkRequestSubmitting, setBulkRequestSubmitting] = useState(false)
+  const [statsModalOpen, setStatsModalOpen] = useState(false)
 
   const effectiveSemester =
     selectedSemester !== undefined ? selectedSemester : activeSemesterId
@@ -476,6 +477,13 @@ function LecturerAssignment() {
               >
                 Phân công tự động bằng AI
               </Button>
+              <Button
+                size="middle"
+                icon={<PieChartOutlined />}
+                onClick={() => setStatsModalOpen(true)}
+              >
+                Xem thống kê
+              </Button>
               {scopedOffice ? (
                 <Button
                   size="middle"
@@ -494,98 +502,107 @@ function LecturerAssignment() {
           }
         />
 
-        <div className="chart-grid chart-grid--assignment">
-          <div className="chart-panel">
-            <div className="chart-panel-title">Tình trạng phân công giảng viên</div>
-            {assignmentStats.statusChartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={360}>
-                <PieChart>
-                  <Pie
-                    data={assignmentStats.statusChartData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={58}
-                    outerRadius={96}
-                    paddingAngle={3}
-                    label={({ name, value, percent }) =>
-                      `${name}: ${value} (${(percent * 100).toFixed(0)}%)`
-                    }
-                  >
-                    {assignmentStats.statusChartData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value, name) => [`${value} lớp`, name]} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  effectiveSemester
-                    ? 'Chưa có lớp học phần trong học kỳ này'
-                    : 'Chọn học kỳ để xem thống kê'
-                }
-              />
-            )}
-          </div>
+        <Modal
+          title="Thống kê phân công giảng viên"
+          open={statsModalOpen}
+          onCancel={() => setStatsModalOpen(false)}
+          footer={null}
+          width={1000}
+          centered
+        >
+          <div className="chart-grid chart-grid--assignment">
+            <div className="chart-panel">
+              <div className="chart-panel-title">Tình trạng phân công giảng viên</div>
+              {assignmentStats.statusChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={360}>
+                  <PieChart>
+                    <Pie
+                      data={assignmentStats.statusChartData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={58}
+                      outerRadius={96}
+                      paddingAngle={3}
+                      label={({ name, value, percent }) =>
+                        `${name}: ${value} (${(percent * 100).toFixed(0)}%)`
+                      }
+                    >
+                      {assignmentStats.statusChartData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value, name) => [`${value} lớp`, name]} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    effectiveSemester
+                      ? 'Chưa có lớp học phần trong học kỳ này'
+                      : 'Chọn học kỳ để xem thống kê'
+                  }
+                />
+              )}
+            </div>
 
-          <div className="chart-panel">
-            <div className="chart-panel-title">Khối lượng giảng dạy theo giảng viên (top 10)</div>
-            {assignmentStats.lecturerLoadChartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={360}>
-                <BarChart
-                  data={assignmentStats.lecturerLoadChartData}
-                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fontSize: 11 }}
-                    interval={0}
-                    angle={-18}
-                    textAnchor="end"
-                    height={72}
-                  />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                  <Tooltip
-                    formatter={(value, name) => [
-                      value,
-                      name === 'sections' ? 'Số lớp' : 'Tín chỉ',
-                    ]}
-                  />
-                  <Legend
-                    formatter={(value) => (value === 'sections' ? 'Số lớp' : 'Tín chỉ giảng dạy')}
-                  />
-                  <Bar
-                    dataKey="sections"
-                    name="sections"
-                    fill="#1677ff"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="credits"
-                    name="credits"
-                    fill="#722ed1"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  effectiveSemester
-                    ? 'Chưa có giảng viên nào được phân công'
-                    : 'Chọn học kỳ để xem thống kê'
-                }
-              />
-            )}
+            <div className="chart-panel">
+              <div className="chart-panel-title">Khối lượng giảng dạy theo giảng viên (top 10)</div>
+              {assignmentStats.lecturerLoadChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={360}>
+                  <BarChart
+                    data={assignmentStats.lecturerLoadChartData}
+                    margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 11 }}
+                      interval={0}
+                      angle={-18}
+                      textAnchor="end"
+                      height={72}
+                    />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                    <Tooltip
+                      formatter={(value, name) => [
+                        value,
+                        name === 'sections' ? 'Số lớp' : 'Tín chỉ',
+                      ]}
+                    />
+                    <Legend
+                      formatter={(value) => (value === 'sections' ? 'Số lớp' : 'Tín chỉ giảng dạy')}
+                    />
+                    <Bar
+                      dataKey="sections"
+                      name="sections"
+                      fill="#1677ff"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="credits"
+                      name="credits"
+                      fill="#722ed1"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    effectiveSemester
+                      ? 'Chưa có giảng viên nào được phân công'
+                      : 'Chọn học kỳ để xem thống kê'
+                  }
+                />
+              )}
+            </div>
           </div>
-        </div>
+        </Modal>
 
         <Spin spinning={loading || autoAssigning}>
           <Table

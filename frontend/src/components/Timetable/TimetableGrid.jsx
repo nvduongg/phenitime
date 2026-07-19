@@ -34,8 +34,10 @@ function TimetableEventCard({ event }) {
             <Tag>Không phòng</Tag>
           )}
         </div>
-        {event.lecturer_id ? (
-          <div className="timetable-event-card__lecturer">{event.lecturer_id}</div>
+        {event.lecturer_name || event.lecturer_id ? (
+          <div className="timetable-event-card__lecturer" style={{ fontSize: '12px', marginTop: '4px', color: '#64748b' }}>
+            {event.lecturer_name || event.lecturer_id}
+          </div>
         ) : null}
       </div>
     </Tooltip>

@@ -1009,6 +1009,7 @@ async function autoGenerateCourseSections(prisma, options = {}) {
     const sectioningConfig = buildSectioningConfig(schedulingConfig, options);
     const defaultStudentCount = resolveDefaultStudentCount(schedulingConfig);
     const cohortIds = normalizeCohortIds(options);
+    const enrollmentRatio = Number(options.expected_enrollment_ratio) || 0.85;
 
     if (!semester_id) {
         const error = new Error('Vui lòng cung cấp mã học kỳ (semester_id)');
@@ -1109,10 +1110,19 @@ async function autoGenerateCourseSections(prisma, options = {}) {
             defaultStudentCount,
         );
 
+        const scaledStudentGroups = studentGroups.map((g) => {
+            const count = g.student_count ?? g.headcount ?? 0;
+            return {
+                ...g,
+                student_count: Math.max(1, Math.round(count * enrollmentRatio)),
+                headcount: Math.max(1, Math.round(count * enrollmentRatio)),
+            };
+        });
+
         activePlans.push({
             curriculum,
             roadmaps,
-            studentGroups,
+            studentGroups: scaledStudentGroups,
             recommendedSemester,
         });
     }

@@ -7,11 +7,11 @@
   --app-user-width: 200px;
   --app-trigger-size: 28px;
   --app-trigger-gap: -1px;
-  --brand-blue: #1677ff;
-  --brand-violet: #722ed1;
-  --brand-cyan: #13c2c2;
+  --brand-blue: #2563eb;
+  --brand-violet: #7c3aed;
+  --brand-cyan: #0891b2;
   --sider-bg: #f8fafc;
-  --sider-border: #e8eef5;
+  --sider-border: #e2e8f0;
 }
 
 *,

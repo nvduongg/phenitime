@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { DeleteOutlined, ExportOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { DeleteOutlined, ExportOutlined, ThunderboltOutlined, PlusOutlined } from '@ant-design/icons'
 import {
   Alert,
   Button,
@@ -19,6 +19,7 @@ import {
 import ExcelImportModal from '../../components/Common/ExcelImportModal'
 import ImportToolbarActions from '../../components/Common/ImportToolbarActions'
 import PageHeader from '../../components/Common/PageHeader'
+import CreateSectionModal from '../../components/CourseSections/CreateSectionModal'
 import { useAuth } from '../../contexts/AuthContext'
 import { isOfficeRole } from '../../config/permissions'
 import { useAppContext } from '../../contexts/AppContext'
@@ -101,6 +102,7 @@ function CourseSections() {
   const [semesterFilter, setSemesterFilter] = useState(undefined)
   const [importOpen, setImportOpen] = useState(false)
   const [autoGenOpen, setAutoGenOpen] = useState(false)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
   const [cohortOptions, setCohortOptions] = useState([])
   const [selectedCohortIds, setSelectedCohortIds] = useState([])
   const [semesterWaves, setSemesterWaves] = useState([])
@@ -584,6 +586,19 @@ function CourseSections() {
             <>
               <Button
                 type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  if (!effectiveSemesterFilter) {
+                    message.warning('Vui lòng chọn học kỳ trước')
+                    return
+                  }
+                  setCreateModalOpen(true)
+                }}
+              >
+                Thêm thủ công
+              </Button>
+              <Button
+                type="dashed"
                 icon={<ThunderboltOutlined />}
                 onClick={handleOpenAutoGenerate}
               >
@@ -622,6 +637,16 @@ function CourseSections() {
         templateUrl={importTemplate?.url}
         templateFileName={importTemplate?.fileName}
         extraData={{ semester_id: effectiveSemesterFilter }}
+      />
+
+      <CreateSectionModal
+        open={createModalOpen}
+        onCancel={() => setCreateModalOpen(false)}
+        onSuccess={() => {
+          setCreateModalOpen(false)
+          fetchSections()
+        }}
+        semesterId={effectiveSemesterFilter}
       />
 
       <Modal

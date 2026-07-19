@@ -1,20 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import dayjs from 'dayjs'
+import isoWeek from 'dayjs/plugin/isoWeek'
 import {
   AppstoreOutlined,
   DeleteOutlined,
   EditOutlined,
   ExportOutlined,
+  LeftOutlined,
   PlusOutlined,
+  RightOutlined,
   TableOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
 import {
   Alert,
   Button,
+  Card,
   DatePicker,
   Form,
+  Input,
   InputNumber,
   Modal,
   Popconfirm,
@@ -28,6 +33,9 @@ import {
   Dropdown,
   message,
 } from 'antd'
+
+dayjs.extend(isoWeek)
+
 import PageHeader from '../../components/Common/PageHeader'
 import TimetableGrid from '../../components/Timetable/TimetableGrid'
 import UnscheduledDragPanel from '../../components/Timetable/UnscheduledDragPanel'
@@ -110,6 +118,7 @@ function Timetables() {
   const [dropRoomOptions, setDropRoomOptions] = useState([])
   const [pinnedGridEvents, setPinnedGridEvents] = useState([])
   const [schedulingSettings, setSchedulingSettings] = useState({})
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => dayjs().startOf('isoWeek'))
   const [form] = Form.useForm()
 
   const effectiveSemesterFilter =
@@ -370,13 +379,26 @@ function Timetables() {
     })
   }, [timetables, effectiveSemesterFilter, effectiveCohortIds, sectionLookup])
 
-  const filteredTimetables = useMemo(() => {
+  const timeFilteredTimetables = useMemo(() => {
     return semesterTimetables.filter((item) => {
+      let matchDate = true
+      const startOfWeek = currentWeekStart.format('YYYY-MM-DD')
+      const endOfWeek = currentWeekStart.endOf('isoWeek').format('YYYY-MM-DD')
+      
+      if (item.start_date && item.end_date) {
+          matchDate = !(item.end_date < startOfWeek || item.start_date > endOfWeek)
+      }
+      return matchDate
+    })
+  }, [semesterTimetables, currentWeekStart])
+
+  const filteredTimetables = useMemo(() => {
+    return timeFilteredTimetables.filter((item) => {
       const matchRoom = roomFilter ? item.room_id === roomFilter : true
       const matchDay = dayFilter ? item.day_of_week === dayFilter : true
       return matchRoom && matchDay
     })
-  }, [semesterTimetables, roomFilter, dayFilter])
+  }, [timeFilteredTimetables, roomFilter, dayFilter])
 
   const displayTimetables = useMemo(
     () => sortTimetablesForDisplay(filteredTimetables, sectionLookup),
@@ -384,8 +406,8 @@ function Timetables() {
   )
 
   const gridBaseEvents = useMemo(
-    () => semesterTimetables.map(normalizeGridEvent),
-    [semesterTimetables],
+    () => timeFilteredTimetables.map(normalizeGridEvent),
+    [timeFilteredTimetables],
   )
 
   const gridFilterOptions = useMemo(
@@ -992,6 +1014,18 @@ function Timetables() {
                   maxTagCount="responsive"
                 />
               )}
+              <Space.Compact>
+                <Button icon={<LeftOutlined />} onClick={() => setCurrentWeekStart(prev => prev.subtract(1, 'week'))} />
+                <DatePicker 
+                  picker="week" 
+                  format="Tuần wo - YYYY"
+                  allowClear={false}
+                  value={currentWeekStart} 
+                  onChange={(date) => date && setCurrentWeekStart(date.startOf('isoWeek'))}
+                  style={{ width: 140, textAlign: 'center' }}
+                />
+                <Button icon={<RightOutlined />} onClick={() => setCurrentWeekStart(prev => prev.add(1, 'week'))} />
+              </Space.Compact>
               {viewMode === 'table' ? (
                 <>
                   <Select
@@ -1024,9 +1058,6 @@ function Timetables() {
           }
           actions={
             <>
-              <Button type="primary" size="middle" icon={<PlusOutlined />} onClick={openCreate}>
-                Thêm mới
-              </Button>
               {semesterWaves.length > 1 ? (
                 <Dropdown
                   menu={{

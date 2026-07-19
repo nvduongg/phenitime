@@ -8,6 +8,7 @@ import {
   TeamOutlined,
   UserSwitchOutlined,
   SwapOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons'
 
 export const menuItems = [
@@ -63,6 +64,11 @@ export const menuItems = [
     key: '/timetables',
     icon: <CalendarOutlined />,
     label: 'Thời khóa biểu',
+  },
+  {
+    key: '/empty-rooms',
+    icon: <AppstoreOutlined />,
+    label: 'Thống kê phòng trống',
   },
   {
     key: 'admin',

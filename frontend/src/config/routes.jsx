@@ -17,6 +17,7 @@ import AssignmentRequests from '../pages/Academic/AssignmentRequests.jsx'
 import CourseSections from '../pages/CourseSections/index.jsx'
 import AiScheduler from '../pages/AiScheduler/index.jsx'
 import Timetables from '../pages/Timetables/index.jsx'
+import EmptyRooms from '../pages/EmptyRooms/index.jsx'
 import Users from '../pages/Admin/Users.jsx'
 import SystemSettings from '../pages/Settings/index.jsx'
 import { ROLES } from '../constants/roles'
@@ -49,6 +50,7 @@ export const appRoutes = [
       { path: 'course-sections', element: <CourseSections /> },
       { path: 'ai-scheduler', element: <AiScheduler /> },
       { path: 'timetables', element: <Timetables /> },
+      { path: 'empty-rooms', element: <EmptyRooms /> },
       {
         path: 'admin/users',
         element: (
