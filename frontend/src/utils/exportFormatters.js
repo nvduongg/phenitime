@@ -633,9 +633,15 @@ function expandOfflineSessionExportRows(
     }
 
     const semester = section.semester || semesterLookup.get(section.semester_id) || {}
+    let currentWeek = null
     const usedRowIds = new Set()
 
     for (const event of plan.events) {
+      if (currentWeek !== event.week_from) {
+        currentWeek = event.week_from
+        usedRowIds.clear()
+      }
+
       const dates = resolvePhaseDateRange(semester, event.week_from, event.week_to)
       const matched = findTimetableRowForOfflineEvent(sectionRows, event, dates, usedRowIds)
       if (matched?.schedule_id) {

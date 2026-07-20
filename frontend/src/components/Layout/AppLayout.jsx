@@ -21,8 +21,8 @@ import {
 
 const { Sider, Content } = Layout
 
-export const SIDER_WIDTH = 260
-export const SIDER_COLLAPSED_WIDTH = 80
+export const SIDER_WIDTH = 230
+export const SIDER_COLLAPSED_WIDTH = 70
 
 function buildHeaderUserMeta(user) {
   const name = (user?.full_name || user?.email || 'Người dùng').trim()

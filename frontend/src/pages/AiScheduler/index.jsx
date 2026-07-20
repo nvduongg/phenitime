@@ -622,7 +622,12 @@ function AiScheduler() {
               <Table
                 className={`ai-unscheduled-table ${TABLE_SCROLL_CLASS}`}
                 size="middle"
-                pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} buổi` }}
+                pagination={{
+                  defaultPageSize: 50,
+                  pageSizeOptions: ['10', '25', '50', '100', '200'],
+                  showSizeChanger: true,
+                  showTotal: (total) => `${total} buổi`,
+                }}
                 rowKey="event_id"
                 dataSource={unscheduledClasses}
                 scroll={getTableScroll(960)}

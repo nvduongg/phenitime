@@ -713,7 +713,8 @@ function LecturerAssignment() {
             columns={columns}
             dataSource={filteredSections}
             pagination={{
-              pageSize: 12,
+              defaultPageSize: 50,
+              pageSizeOptions: ['10', '25', '50', '100', '200'],
               showSizeChanger: true,
               showTotal: (total) =>
                 cohortFilter.length

@@ -105,7 +105,8 @@ class TimetableScheduler:
         self.shifts = configured_shifts or list(self.CANONICAL_SHIFTS)
 
         self.physical_shifts = [
-            shift for shift in self.shifts if shift in self.allowed_start_periods
+            shift for shift in self.shifts 
+            if shift in self.allowed_start_periods and shift not in self.evening_start_periods
         ] or list(self.shifts)
         self.virtual_shifts = [
             int(shift)

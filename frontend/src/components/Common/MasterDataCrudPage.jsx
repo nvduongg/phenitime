@@ -113,7 +113,12 @@ function MasterDataCrudPage({
           rowKey={rowKey}
           columns={[...columns, actionColumn]}
           dataSource={dataSource}
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} bản ghi` }}
+          pagination={{
+            defaultPageSize: 50,
+            pageSizeOptions: ['10', '25', '50', '100', '200'],
+            showSizeChanger: true,
+            showTotal: (total) => `${total} bản ghi`,
+          }}
           scroll={getTableScroll(scrollX)}
           sticky
         />

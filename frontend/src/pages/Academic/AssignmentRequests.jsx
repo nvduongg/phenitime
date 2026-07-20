@@ -286,7 +286,12 @@ export default function AssignmentRequests() {
         loading={loading}
         columns={box === 'incoming' ? incomingColumns : outgoingColumns}
         dataSource={rows}
-        pagination={{ pageSize: 10 }}
+        pagination={{
+          defaultPageSize: 50,
+          pageSizeOptions: ['10', '25', '50', '100', '200'],
+          showSizeChanger: true,
+          showTotal: (total) => `${total} yêu cầu`,
+        }}
         scroll={getTableScroll(1280)}
         sticky
       />
