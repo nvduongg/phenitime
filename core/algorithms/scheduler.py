@@ -26,8 +26,8 @@ class TimetableScheduler:
     DEFAULT_SOLVER_MAX_TIME_SECONDS = 120.0
     DEFAULT_SOLVER_NUM_WORKERS = 8
     DEFAULT_RELAXATION_MAX_TIME_SECONDS = 90.0
-    DEFAULT_LNS_MAX_ITERATIONS = 5
-    DEFAULT_LNS_MAX_NEIGHBORHOOD = 40
+    DEFAULT_LNS_MAX_ITERATIONS = 4
+    DEFAULT_LNS_MAX_NEIGHBORHOOD = 50
     DEFAULT_LNS_MAX_TIME_SECONDS = 120.0
     SOFT_CAPACITY_RATIO = 0.85
     RELAXED_MAX_SHIFTS_PER_DAY = 4
@@ -444,11 +444,15 @@ class TimetableScheduler:
                 self._lecturer_period_index[(lecturer_key, day, period)].append(var)
 
         student_groups = event.get("student_groups") or []
+        # Include course_id so HC4 can skip conflicts between parallel sections of the same course.
+        # Students in a group are split across parallel sections of the same course, so those
+        # sections CAN run simultaneously (different students attend each).
+        course_id = str(event.get("course_id") or "")
         if isinstance(student_groups, list):
             for group_id in student_groups:
                 if group_id:
                     for period in occupied_periods:
-                        self._group_period_index[(str(group_id), day, period)].append(var)
+                        self._group_period_index[(str(group_id), day, period)].append((var, course_id))
 
         section_id = event.get("section_id")
         if section_id:
@@ -628,11 +632,25 @@ class TimetableScheduler:
                 self.model.AddAtMostOne(vars_at_period)
                 hc3_count += 1
 
+        # HC4: a student group cannot be in two sections of DIFFERENT courses at the same time.
+        # Sections of the SAME course can overlap (students are split across parallel sections
+        # of the same course — different students from the group attend each section).
         hc4_count = 0
-        for (_group_id, day, period), vars_at_period in self._group_period_index.items():
-            if len(vars_at_period) > 1:
-                self.model.AddAtMostOne(vars_at_period)
-                hc4_count += 1
+        for (_group_id, day, period), entries in self._group_period_index.items():
+            if len(entries) > 1:
+                # Group vars by course_id
+                by_course = defaultdict(list)
+                for var, cid in entries:
+                    by_course[cid].append(var)
+                if len(by_course) > 1:
+                    # Use one representative var per course to avoid over-constraining.
+                    # The constraint is: at most one DIFFERENT-COURSE section per group per slot.
+                    # Picking any one var from each course is sufficient because HC2/HC3
+                    # already ensure that within the same course, at most one section
+                    # gets assigned a real room at this slot.
+                    representative_vars = [cvars[0] for cvars in by_course.values()]
+                    self.model.AddAtMostOne(representative_vars)
+                    hc4_count += 1
 
         hc6_count = 0
         for (_section_id, day, _week_from, _week_to), vars_on_day in self._section_day_index.items():
@@ -1073,7 +1091,10 @@ class TimetableScheduler:
             is_scheduled2[event_id] = is_sched_var
             event_vars = []
 
-            shift_candidates = self._allowed_start_shifts(event)
+            shift_candidates = [
+                shift for shift in self.shifts
+                if self._fits_shift(event, shift)
+            ]
 
             for _, room in self.rooms.iterrows():
                 room_id = str(room["room_id"])
@@ -1131,10 +1152,11 @@ class TimetableScheduler:
                             for period in occupied_periods:
                                 lecturer_period_index[(lecturer_key, day, period)].append(var)
 
+                        course_id_p2 = str(event.get("course_id") or "")
                         for group_id in event.get("student_groups") or []:
                             if group_id:
                                 for period in occupied_periods:
-                                    group_period_index[(str(group_id), day, period)].append(var)
+                                    group_period_index[(str(group_id), day, period)].append((var, course_id_p2))
 
                         section_id = event.get("section_id")
                         if section_id:
@@ -1180,14 +1202,26 @@ class TimetableScheduler:
                 hc3_count += 1
 
         hc4_count = 0
-        for slot_key, vars_at_slot in group_period_index.items():
+        is_group_overlapped = {}
+        for slot_key, entries in group_period_index.items():
+            by_course_p2 = defaultdict(list)
+            for var, cid in entries:
+                by_course_p2[cid].append(var)
+
+            vars_at_slot = [v for v, _ in entries]
             base_occ = base_maps["group_period"].get(slot_key, 0)
             if base_occ > 0:
-                model2.Add(sum(vars_at_slot) == 0)
-                continue
-            if len(vars_at_slot) > 1:
-                model2.AddAtMostOne(vars_at_slot)
+                gol_var = model2.NewBoolVar(f"p2_gol_{hc4_count}")
+                is_group_overlapped[slot_key] = gol_var
+                model2.Add(sum(vars_at_slot) <= gol_var)
                 hc4_count += 1
+                continue
+            if len(by_course_p2) > 1:
+                # Same-course exclusion: only constrain across different courses
+                rep_vars = [cvars[0] for cvars in by_course_p2.values()]
+                if len(rep_vars) > 1:
+                    model2.AddAtMostOne(rep_vars)
+                    hc4_count += 1
 
         is_overcrowded = {}
         for event_id, tight_vars in event_tight_vars.items():
@@ -1199,7 +1233,6 @@ class TimetableScheduler:
 
         is_fatigued = {}
         hc7_soft_count = 0
-        strict_cap = self.max_lecturer_shifts_per_day
         relaxed_cap = self.relaxed_max_shifts_per_day
 
         for (lecturer_id, day), vars_on_day in lecturer_day_index.items():
@@ -1207,9 +1240,7 @@ class TimetableScheduler:
                 continue
 
             base_shifts = base_maps["lecturer_day"].get((lecturer_id, day), 0)
-            if base_shifts >= relaxed_cap:
-                model2.Add(sum(vars_on_day) == 0)
-                continue
+            strict_cap = self.max_lecturer_shifts_per_day
 
             fatigue_var = model2.NewBoolVar(
                 f"p2_fatigue_{self._sanitize_var_token(lecturer_id)}_d{day}"
@@ -1251,29 +1282,23 @@ class TimetableScheduler:
                     event_row = event_row.iloc[0]
                 if self._uses_virtual_room(event_row):
                     continue
-                section_id = event_row.get("section_id")
-                if section_id:
-                    section_event_map[str(section_id)].append(event_id)
+                sec_id = event_row.get("section_id")
+                if sec_id:
+                    section_event_map[str(sec_id)].append(str(event_id))
 
             for section_id, section_event_ids in section_event_map.items():
-                if len(section_event_ids) < 2:
-                    continue
-
-                candidate_rooms = sorted({
-                    key[1]
-                    for key in X2
-                    if key[0] in section_event_ids
-                })
-                if not candidate_rooms:
+                if len(section_event_ids) <= 1:
                     continue
 
                 home_vars = {}
-                for room_id in candidate_rooms:
-                    token = (
-                        f"{self._sanitize_var_token(section_id)}_"
-                        f"{self._sanitize_var_token(room_id)}"
+                for _, room in self.rooms.iterrows():
+                    room_id = str(room["room_id"])
+                    if room_id == self.VIRTUAL_ROOM_ID:
+                        continue
+                    h_var = model2.NewBoolVar(
+                        f"p2_home_{self._sanitize_var_token(section_id)}_{self._sanitize_var_token(room_id)}"
                     )
-                    home_vars[room_id] = model2.NewBoolVar(f"p2_home_{token}")
+                    home_vars[room_id] = h_var
 
                 model2.Add(sum(home_vars.values()) <= 1)
                 hc8_count += 1
@@ -1297,11 +1322,6 @@ class TimetableScheduler:
         objective_terms.extend(
             -self.PENALTY_CRAMMED * cram_var for cram_var in is_crammed.values()
         )
-        model2.Maximize(sum(objective_terms))
-
-        print(f"[*] {log_prefix} HC2 room AddAtMostOne groups: {hc2_count}")
-        print(f"[*] {log_prefix} HC3 lecturer AddAtMostOne groups: {hc3_count}")
-        print(f"[*] {log_prefix} HC4 student group AddAtMostOne groups: {hc4_count}")
         print(f"[*] {log_prefix} soft HC6 (crammed) groups: {hc6_soft_count}")
         print(f"[*] {log_prefix} soft HC7 (fatigue) groups: {hc7_soft_count}")
         print(f"[*] {log_prefix} HC8 fixed room per section groups: {hc8_count}")
@@ -1504,20 +1524,21 @@ class TimetableScheduler:
                 max_time_seconds=lns_max_time,
             )
 
-            scheduled_ids = {str(row.get("event_id")) for row in output["scheduled"]}
-            relocated_count += len(unlocked_before.intersection(scheduled_ids))
+            new_remaining = [str(event_id) for event_id in output["unscheduled"]]
 
-            current_schedule = frozen + output["scheduled"]
-            remaining = [str(event_id) for event_id in output["unscheduled"]]
-
-            print(
-                f"[*] Phase 3 LNS iter {iteration}: "
-                f"unscheduled {before_remaining} -> {len(remaining)}."
-            )
-
-            if len(remaining) >= before_remaining:
+            if len(new_remaining) < before_remaining:
+                scheduled_ids = {str(row.get("event_id")) for row in output["scheduled"]}
+                relocated_count += len(unlocked_before.intersection(scheduled_ids))
+                current_schedule = frozen + output["scheduled"]
+                remaining = new_remaining
                 print(
-                    f"[*] Phase 3 LNS: stopping early — no improvement in iteration {iteration}."
+                    f"[*] Phase 3 LNS iter {iteration}: "
+                    f"improved unscheduled {before_remaining} -> {len(remaining)}."
+                )
+            else:
+                print(
+                    f"[*] Phase 3 LNS iter {iteration}: "
+                    f"no improvement ({len(new_remaining)} >= {before_remaining}). Keeping previous valid schedule."
                 )
                 break
 

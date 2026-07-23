@@ -733,7 +733,7 @@ body {
 }
 
 .dashboard-kpi-card:hover {
-  transform: translateY(-2px);
+  transform: none !important;
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
 }
 
@@ -1358,7 +1358,7 @@ body {
 
 .ai-run-button {
   margin-top: 4px;
-  height: 44px;
+  height: 40px !important;
   font-weight: 500;
 }
 
@@ -2004,7 +2004,7 @@ body {
 }
 
 .timetable-event-card:hover {
-  transform: translateY(-1px);
+  transform: none !important;
   border-color: #93c5fd;
   box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
 }
@@ -2253,10 +2253,16 @@ body {
 
 /* Micro-animations */
 .ant-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+  transition: box-shadow 0.2s ease !important;
 }
-.ant-card:hover {
-  transform: translateY(-2px);
+.ant-card:hover,
+.dashboard-kpi-card:hover,
+.timetable-event-card:hover,
+.ai-run-card:hover,
+.ai-readiness-item:hover,
+.ai-scheduler-page .ant-card:hover,
+div.ant-card:hover {
+  transform: none !important;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01) !important;
 }
 

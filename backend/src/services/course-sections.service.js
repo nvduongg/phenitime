@@ -215,15 +215,38 @@ function shouldMergeGroupsAcrossCurricula(course) {
     return resolveCourseTemplateCode(course) === 'ONLINE';
 }
 
+/**
+ * Trần sĩ số dự kiến cho lớp học phần khi sinh lớp.
+ * - Nếu sĩ số phân bổ thực tế (allocatedHeadcount) vượt trần chuẩn (targetCap),
+ *   làm tròn lên bội số 5 gần nhất thay vì dùng số lẻ.
+ *   VD: target=40, allocated=41 → 45; target=40, allocated=44 → 45.
+ * - Nếu allocatedHeadcount ≤ targetCap, dùng targetCap (số đẹp từ cấu hình).
+ */
+function roundUpToNiceCapacity(rawValue) {
+    const v = Number(rawValue) || 0;
+    if (v <= 0) return 0;
+    const step = 5;
+    return Math.ceil(v / step) * step;
+}
+
 function resolvePlanningEnrollmentCapacity(slot, requiresScheduling) {
     const targetCap = Number(slot?.capacity) || 0;
-    const allocated = Number(slot?.allocatedHeadcount);
+    const allocated = Number(slot?.allocatedHeadcount) || 0;
 
     if (targetCap > 0) {
-        return Math.max(targetCap, allocated || 0);
+        if (allocated <= targetCap) {
+            // Sĩ số nằm trong trần chuẩn — giữ nguyên số đẹp từ cấu hình (ví dụ 40 hay 80).
+            return targetCap;
+        }
+        // Với các lớp TH/PM (trần an toàn 40 chỗ), không đẩy capacity vượt quá 40 để tránh làm nghẽn phòng máy
+        if (targetCap === 40) {
+            return 40;
+        }
+        // Các lớp LT khác vượt trần → làm tròn lên bội số 5 gần nhất (ví dụ 41→45, 81→85).
+        return roundUpToNiceCapacity(allocated);
     }
 
-    return allocated || 0;
+    return roundUpToNiceCapacity(allocated);
 }
 
 function buildSectionDraft({

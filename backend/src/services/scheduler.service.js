@@ -261,6 +261,7 @@ async function buildSolvePayload(prisma, semesterId, config = {}, options = {}) 
             existing_occupancy: existingOccupancy,
             fixed_room_per_section: mergedConfig.fixed_room_per_section !== false,
             virtual_room_capacity: mergedConfig.virtual_room_capacity,
+            max_student_group_sessions_per_day: mergedConfig.max_student_group_sessions_per_day ?? 3,
         },
         persist: false,
         rooms: preflight.physicalRooms.length > 0 ? preflight.physicalRooms : preflight.rooms,

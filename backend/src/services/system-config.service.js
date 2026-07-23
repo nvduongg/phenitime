@@ -42,18 +42,19 @@ const DEFAULT_SECTIONING_TEMPLATES = {
 };
 
 const DEFAULT_SOLVER_POLICY = {
-    solver_max_time_seconds: 60,
+    solver_max_time_seconds: 120,
     solver_num_workers: 8,
     enable_relaxation_pass: true,
-    relaxation_max_time_seconds: 60,
+    relaxation_max_time_seconds: 90,
     soft_capacity_ratio: 0.9,
     relaxed_max_shifts_per_day: 3,
     enable_lns_pass: true,
-    lns_max_iterations: 3,
-    lns_max_neighborhood: 40,
-    lns_max_time_seconds: 90,
+    lns_max_iterations: 4,
+    lns_max_neighborhood: 50,
+    lns_max_time_seconds: 120,
     fixed_room_per_section: true,
     virtual_room_capacity: 9999,
+    max_student_group_sessions_per_day: 3,
 };
 
 const DEFAULT_IMPORT_DEFAULTS = {

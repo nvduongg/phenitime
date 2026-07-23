@@ -68,7 +68,7 @@ export const menuItems = [
   {
     key: '/empty-rooms',
     icon: <AppstoreOutlined />,
-    label: 'Thống kê phòng trống',
+    label: 'Thống kê Phòng & Giảng viên',
   },
   {
     key: 'admin',

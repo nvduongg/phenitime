@@ -33,6 +33,10 @@ function buildOccupancyBlocks(timetables = [], semester = {}) {
 
             return {
                 room_id: String(row.room_id).trim(),
+                lecturer_id: row.section?.lecturer_id ? String(row.section.lecturer_id).trim() : null,
+                student_group_ids: Array.isArray(row.section?.student_groups)
+                    ? row.section.student_groups.map((g) => String(g.group_id).trim())
+                    : [],
                 day_of_week: Number(row.day_of_week),
                 start_period: Number(row.start_period),
                 period_count: Math.max(Number(row.period_count) || 3, 1),

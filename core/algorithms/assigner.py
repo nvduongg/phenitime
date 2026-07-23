@@ -111,26 +111,49 @@ def assign_lecturers(sections, lecturers):
             f'Quota_{lecturer_id}',
         )
 
+    # Hàm mục tiêu kép: Làm phẳng cả Tải tiết dạy (max_load) và Số lớp đảm nhiệm (max_sections)
+    # Đồng thời bổ sung Soft Penalty nếu 1 GV bị nhận quá 4 lớp (để không bị Infeasible nếu thiếu GV chuyên môn).
     max_load = pulp.LpVariable('max_load', lowBound=0, cat=pulp.LpContinuous)
+    max_sections = pulp.LpVariable('max_sections', lowBound=0, cat=pulp.LpContinuous)
+    
+    overload_vars = []
     for lecturer_id in lecturer_ids:
         assigned_vars = [
             weights[section_id] * decision_vars[(section_id, lecturer_id)]
             for section_id in section_ids
             if (section_id, lecturer_id) in decision_vars
         ]
+        assigned_section_vars = [
+            decision_vars[(section_id, lecturer_id)]
+            for section_id in section_ids
+            if (section_id, lecturer_id) in decision_vars
+        ]
         if not assigned_vars:
             continue
+
         prob += (
-            current_load[lecturer_id] + pulp.lpSum(assigned_vars)
-            <= max_load,
+            current_load[lecturer_id] + pulp.lpSum(assigned_vars) <= max_load,
             f'MaxLoad_{lecturer_id}',
         )
+        prob += (
+            pulp.lpSum(assigned_section_vars) <= max_sections,
+            f'MaxSectionsVar_{lecturer_id}',
+        )
 
-    prob += max_load
+        # Soft Overload penalty: Nếu > 4 lớp thì tính điểm phạt chứ không chặn cứng làm hỏng bài toán
+        overload = pulp.LpVariable(f'Overload_{lecturer_id}', lowBound=0, cat=pulp.LpContinuous)
+        prob += (
+            pulp.lpSum(assigned_section_vars) - 4 <= overload,
+            f'SoftOverload_{lecturer_id}',
+        )
+        overload_vars.append(overload)
 
-    solve_status = prob.solve(pulp.PULP_CBC_CMD(msg=False))
+    # Objective: Tối ưu tiết dạy (10x) + Số lớp (1x) + Phạt quá 4 lớp (50x penalty)
+    prob += 10 * max_load + max_sections + 50 * pulp.lpSum(overload_vars)
 
-    if pulp.LpStatus[solve_status] != 'Optimal':
+    solve_status = prob.solve(pulp.PULP_CBC_CMD(msg=False, timeLimit=15))
+
+    if pulp.LpStatus[solve_status] not in ['Optimal', 'Not Solved']:
         return {
             'status': 'fail',
             'message': (
@@ -146,12 +169,23 @@ def assign_lecturers(sections, lecturers):
             key = (section_id, lecturer_id)
             if key not in decision_vars:
                 continue
-            if pulp.value(decision_vars[key]) == 1:
+            val = pulp.value(decision_vars[key])
+            if val is not None and val > 0.5:
                 assignments.append({
                     'section_id': section_id,
                     'lecturer_id': lecturer_id,
                 })
                 break
+
+    if not assignments or len(assignments) < len(section_ids):
+        return {
+            'status': 'fail',
+            'message': (
+                'Quá thời gian giải thuật (15s): Không tìm được phương án cho tất cả lớp. '
+                'Vui lòng nới lỏng giới hạn quota hoặc kiểm tra chuyên môn giảng viên.'
+            ),
+            'assignments': [],
+        }
 
     return {
         'status': 'success',

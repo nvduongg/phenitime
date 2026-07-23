@@ -89,6 +89,14 @@ async function loadExistingOccupancy(prisma, semesterId, excludeSectionIds = [])
         return [];
     }
 
+    if (excludeSectionIds.length > 0) {
+        await prisma.timetable.deleteMany({
+            where: {
+                section_id: { in: excludeSectionIds },
+            },
+        });
+    }
+
     const timetables = await prisma.timetable.findMany({
         where: {
             section: { semester_id: semesterId },
